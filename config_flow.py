@@ -13,6 +13,9 @@ from homeassistant import data_entry_flow
 from homeassistant.data_entry_flow import FlowResult
 from homeassistant.helpers.aiohttp_client import async_get_clientsession
 from homeassistant.helpers.selector import (
+    NumberSelector,
+    NumberSelectorConfig,
+    NumberSelectorMode,
     SelectSelector,
     SelectSelectorConfig,
     SelectSelectorMode,
@@ -27,7 +30,11 @@ from .const import (
     CONF_DONG,
     CONF_HO,
     CONF_CONTROL_INFO,
+    CONF_UPDATE_INTERVAL,
     DEFAULT_HOST,
+    DEFAULT_UPDATE_INTERVAL,
+    MIN_UPDATE_INTERVAL,
+    MAX_UPDATE_INTERVAL,
 )
 from .api import DaelimSmartHomeAPI, fetch_apartment_list, get_dong_list
 
@@ -319,7 +326,48 @@ class DaelimSmartHomeOptionsFlow(config_entries.OptionsFlow):
         """Handle the initial options step."""
         return self.async_show_menu(
             step_id="init",
-            menu_options=["device_config"],
+            menu_options=["settings", "device_config"],
+        )
+
+    async def async_step_settings(
+        self, user_input: dict[str, Any] | None = None
+    ) -> FlowResult:
+        """Handle settings configuration (update interval, etc.)."""
+        errors: dict[str, str] = {}
+
+        if user_input is not None:
+            # Save settings to options
+            return self.async_create_entry(
+                title="",
+                data={CONF_UPDATE_INTERVAL: int(user_input[CONF_UPDATE_INTERVAL])},
+            )
+
+        # Get current update interval from options
+        current_interval = self._config_entry.options.get(
+            CONF_UPDATE_INTERVAL, DEFAULT_UPDATE_INTERVAL
+        )
+
+        data_schema = vol.Schema(
+            {
+                vol.Required(
+                    CONF_UPDATE_INTERVAL,
+                    default=current_interval,
+                ): NumberSelector(
+                    NumberSelectorConfig(
+                        min=MIN_UPDATE_INTERVAL,
+                        max=MAX_UPDATE_INTERVAL,
+                        step=5,
+                        mode=NumberSelectorMode.SLIDER,
+                        unit_of_measurement="seconds",
+                    )
+                ),
+            }
+        )
+
+        return self.async_show_form(
+            step_id="settings",
+            data_schema=data_schema,
+            errors=errors,
         )
 
     async def async_step_device_config(

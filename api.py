@@ -921,10 +921,11 @@ class DaelimSmartHomeAPI:
             response = await self._protocol_client.set_light(uid, state, dim_level)
             error = response.get("error", -1)
             
-            # If connection error, try reconnecting and retry once
+            # If connection error, explicitly disconnect, then reconnect and retry once
             if error == -1:
                 _LOGGER.warning("Light control connection error, reconnecting and retrying...")
-                if await self.ensure_protocol_connected():
+                await self.disconnect_protocol()
+                if await self.connect_protocol():
                     response = await self._protocol_client.set_light(uid, state, dim_level)
                     error = response.get("error", -1)
             

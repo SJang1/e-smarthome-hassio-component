@@ -31,6 +31,38 @@
       "already_configured": "이 아파트는 이미 설정되어 있습니다"
     }
   },
+  "options": {
+    "step": {
+      "init": {
+        "title": "대림 스마트홈 옵션",
+        "description": "대림 스마트홈 연동을 설정합니다",
+        "menu_options": {
+          "settings": "설정",
+          "device_config": "기기 설정"
+        }
+      },
+      "settings": {
+        "title": "설정",
+        "description": "연동 설정을 구성합니다",
+        "data": {
+          "update_interval": "업데이트 주기"
+        },
+        "data_description": {
+          "update_interval": "기기 상태를 얼마나 자주 확인할지 설정합니다 (초 단위)"
+        }
+      },
+      "device_config": {
+        "title": "기기 설정",
+        "description": "자동 검색에 실패한 경우 기기 설정 JSON을 수동으로 입력합니다",
+        "data": {
+          "control_info": "기기 설정 JSON"
+        },
+        "data_description": {
+          "control_info": "기기 설정 JSON을 입력하세요"
+        }
+      }
+    }
+  },
   "entity": {
     "light": {
       "all_lights": {

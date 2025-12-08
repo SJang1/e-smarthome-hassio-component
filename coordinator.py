@@ -12,7 +12,7 @@ from homeassistant.helpers.update_coordinator import (
 )
 
 from .api import DaelimSmartHomeAPI
-from .const import DOMAIN, UPDATE_INTERVAL
+from .const import DOMAIN, DEFAULT_UPDATE_INTERVAL
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -20,15 +20,21 @@ _LOGGER = logging.getLogger(__name__)
 class DaelimDataUpdateCoordinator(DataUpdateCoordinator):
     """Class to manage fetching Daelim Smart Home data."""
 
-    def __init__(self, hass: HomeAssistant, api: DaelimSmartHomeAPI) -> None:
+    def __init__(
+        self, 
+        hass: HomeAssistant, 
+        api: DaelimSmartHomeAPI,
+        update_interval: int = DEFAULT_UPDATE_INTERVAL,
+    ) -> None:
         """Initialize the coordinator."""
         super().__init__(
             hass,
             _LOGGER,
             name=DOMAIN,
-            update_interval=timedelta(seconds=UPDATE_INTERVAL),
+            update_interval=timedelta(seconds=update_interval),
         )
         self.api = api
+        self._update_interval_seconds = update_interval
 
     async def _async_update_data(self) -> dict[str, Any]:
         """Fetch data from API."""

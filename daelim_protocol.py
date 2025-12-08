@@ -209,8 +209,8 @@ class DaelimProtocolClient:
         
     @property
     def connected(self) -> bool:
-        """Return True if connected."""
-        return self._connected
+        """Return True if connected and socket is valid."""
+        return self._connected and self._writer is not None
     
     @property
     def logged_in(self) -> bool:
@@ -388,10 +388,20 @@ class DaelimProtocolClient:
     ) -> dict:
         """Send request and wait for response."""
         if not self._connected or not self._writer or not self._reader:
+            _LOGGER.warning("Cannot send: not connected (connected=%s, writer=%s, reader=%s)",
+                           self._connected, self._writer is not None, self._reader is not None)
             return {"error": -1, "body": {}}
         
         async with self._lock:
             try:
+                # Check again after acquiring lock (socket may have been closed)
+                writer = self._writer
+                reader = self._reader
+                if not writer or not reader:
+                    _LOGGER.warning("Socket closed while waiting for lock")
+                    self._connected = False
+                    return {"error": -1, "body": {}}
+                
                 message = self._build_message(msg_type, subtype, payload)
                 
                 _LOGGER.debug(
@@ -399,11 +409,11 @@ class DaelimProtocolClient:
                     msg_type, subtype, self._login_pin
                 )
                 
-                self._writer.write(message)
-                await self._writer.drain()
+                writer.write(message)
+                await writer.drain()
                 
                 response_data = await asyncio.wait_for(
-                    self._reader.read(8192),
+                    reader.read(8192),
                     timeout=timeout
                 )
                 

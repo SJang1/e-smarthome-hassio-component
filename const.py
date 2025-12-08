@@ -11,6 +11,7 @@ CONF_CONTROL_INFO: Final = "control_info"  # Stored device configuration
 CONF_DEVICE_UUID: Final = "device_uuid"  # Device UUID for protocol authentication
 CONF_CERT_PIN: Final = "cert_pin"  # Saved cert pin for session reuse
 CONF_LOGIN_PIN: Final = "login_pin"  # Saved login pin for session reuse
+CONF_UPDATE_INTERVAL: Final = "update_interval"  # Update interval in seconds
 
 # API Constants
 DEFAULT_HOST: Final = "smarthome.daelim.co.kr"
@@ -70,4 +71,6 @@ GUARD_MODE_OFF: Final = "0"
 GUARD_MODE_AWAY: Final = "1"
 
 # Update interval in seconds
-UPDATE_INTERVAL: Final = 30
+DEFAULT_UPDATE_INTERVAL: Final = 10
+MIN_UPDATE_INTERVAL: Final = 5
+MAX_UPDATE_INTERVAL: Final = 300

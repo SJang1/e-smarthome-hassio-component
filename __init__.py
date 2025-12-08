@@ -23,7 +23,9 @@ from .const import (
     CONF_DEVICE_UUID,
     CONF_CERT_PIN,
     CONF_LOGIN_PIN,
+    CONF_UPDATE_INTERVAL,
     DEFAULT_INTERNAL_PORT,
+    DEFAULT_UPDATE_INTERVAL,
 )
 from .api import DaelimSmartHomeAPI
 from .coordinator import DaelimDataUpdateCoordinator
@@ -35,6 +37,7 @@ PLATFORMS: list[Platform] = [
     Platform.LIGHT,
     Platform.CLIMATE,
     Platform.SWITCH,
+    Platform.VALVE,
     Platform.FAN,
     Platform.ALARM_CONTROL_PANEL,
     Platform.BUTTON,
@@ -177,7 +180,11 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
                 apart_id
             )
 
-    coordinator = DaelimDataUpdateCoordinator(hass, api)
+    # Get update interval from options (user-configurable)
+    update_interval = entry.options.get(CONF_UPDATE_INTERVAL, DEFAULT_UPDATE_INTERVAL)
+    _LOGGER.info("Using update interval: %s seconds", update_interval)
+
+    coordinator = DaelimDataUpdateCoordinator(hass, api, update_interval=update_interval)
     await coordinator.async_config_entry_first_refresh()
 
     hass.data[DOMAIN][entry.entry_id] = {
@@ -198,7 +205,18 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
 
     await hass.config_entries.async_forward_entry_setups(entry, PLATFORMS)
 
+    # Register listener for options updates (to reload when settings change)
+    entry.async_on_unload(entry.add_update_listener(async_options_update_listener))
+
     return True
+
+
+async def async_options_update_listener(
+    hass: HomeAssistant, entry: ConfigEntry
+) -> None:
+    """Handle options update - reload integration to apply new settings."""
+    _LOGGER.info("Options updated, reloading integration")
+    await hass.config_entries.async_reload(entry.entry_id)
 
 
 async def async_unload_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:

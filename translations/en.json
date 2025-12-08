@@ -31,6 +31,38 @@
       "already_configured": "This apartment is already configured"
     }
   },
+  "options": {
+    "step": {
+      "init": {
+        "title": "Daelim Smart Home Options",
+        "description": "Configure your Daelim Smart Home integration",
+        "menu_options": {
+          "settings": "Settings",
+          "device_config": "Device Configuration"
+        }
+      },
+      "settings": {
+        "title": "Settings",
+        "description": "Configure integration settings",
+        "data": {
+          "update_interval": "Update Interval"
+        },
+        "data_description": {
+          "update_interval": "How often to poll for device status updates (in seconds)"
+        }
+      },
+      "device_config": {
+        "title": "Device Configuration",
+        "description": "Manually enter device configuration JSON if auto-discovery fails",
+        "data": {
+          "control_info": "Device Configuration JSON"
+        },
+        "data_description": {
+          "control_info": "Enter the device configuration JSON"
+        }
+      }
+    }
+  },
   "entity": {
     "light": {
       "all_lights": {
