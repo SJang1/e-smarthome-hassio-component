@@ -49,7 +49,7 @@ class DaelimGasValve(DaelimEntity, ValveEntity):
     """Representation of a Daelim Smart Home gas valve."""
 
     _attr_device_class = ValveDeviceClass.GAS
-    _attr_supported_features = ValveEntityFeature.OPEN | ValveEntityFeature.CLOSE
+    _attr_reports_position = False  # Binary valve (open/closed), not positional
 
     def __init__(
         self,
@@ -59,6 +59,7 @@ class DaelimGasValve(DaelimEntity, ValveEntity):
         """Initialize the gas valve."""
         super().__init__(coordinator, DEVICE_GAS, device_info)
         self._attr_name = "가스밸브"
+        self._attr_supported_features = ValveEntityFeature.OPEN | ValveEntityFeature.CLOSE
         
         # Override device info for gas valve
         self._attr_device_info = DeviceInfo(
@@ -78,11 +79,7 @@ class DaelimGasValve(DaelimEntity, ValveEntity):
         return True  # Default to closed for safety
 
     async def async_open_valve(self, **kwargs: Any) -> None:
-        """Open gas valve.
-        
-        Note: For safety, opening the gas valve remotely may not be allowed
-        by all systems.
-        """
+        """Open gas valve."""
         _LOGGER.warning(
             "Opening gas valve remotely - please verify this is allowed by your system"
         )

@@ -1,4 +1,4 @@
-"""Switch platform for Daelim Smart Home (Standby power outlets only)."""
+"""Switch platform for Daelim Smart Home (Standby power outlets)."""
 from __future__ import annotations
 
 import logging
