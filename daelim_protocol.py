@@ -68,6 +68,29 @@ SUBTYPE_DEVICE_INVOKE_RES = 4
 SUBTYPE_EVCALL_REQ = 1
 SUBTYPE_EVCALL_RES = 2
 
+# EMS (Energy) Subtypes
+SUBTYPE_EMS_NOW_REQ = 1
+SUBTYPE_EMS_NOW_RES = 2
+SUBTYPE_EMS_MONTHLY_REQ = 3
+SUBTYPE_EMS_MONTHLY_RES = 4
+SUBTYPE_EMS_SAMETYPE_REQ = 5
+SUBTYPE_EMS_SAMETYPE_RES = 6
+SUBTYPE_EMS_TARGET_QUERY_REQ = 7
+SUBTYPE_EMS_TARGET_QUERY_RES = 8
+SUBTYPE_EMS_TARGET_SET_REQ = 9
+SUBTYPE_EMS_TARGET_SET_RES = 10
+SUBTYPE_EMS_RANK_REQ = 11
+SUBTYPE_EMS_RANK_RES = 12
+SUBTYPE_EMS_GRAPH_REQ = 16  # Detailed yearly/monthly graph
+SUBTYPE_EMS_GRAPH_RES = 17
+
+# Energy Types
+ENERGY_ELEC = "Elec"
+ENERGY_GAS = "Gas"
+ENERGY_WATER = "Water"
+ENERGY_HOTWATER = "Hotwater"
+ENERGY_HEATING = "Heating"
+
 # Info Subtypes
 SUBTYPE_SERVICE_CNT_REQ = 45
 SUBTYPE_SERVICE_CNT_RES = 46
@@ -141,10 +164,20 @@ class DaelimProtocolClient:
     
     Handles TCP communication with the apartment's smart home server
     using the proprietary binary protocol.
+    
+    Supports LoginPin reuse - saves the pin and tries to reuse it on
+    reconnection. If the pin is expired (error 17), performs fresh login.
     """
     
     DEFAULT_PORT = 25301
     HEADER_SIZE = 28  # 4 + 8 + 4 + 4 + 4 + 4
+    
+    # Errors that indicate we need to re-login
+    RELOGIN_ERRORS = {
+        ERROR_SESSION_EXPIRED,  # 17 - session expired
+        ERROR_INVALID_LOGINPIN,  # 3 - invalid login pin
+        # Note: -1 is NOT included - that's for connection errors, not session errors
+    }
     
     def __init__(
         self,
@@ -165,6 +198,13 @@ class DaelimProtocolClient:
         self._lock = asyncio.Lock()
         self._control_info: dict = {}
         self._uuid: str = ""
+        
+        # Store credentials for auto-relogin
+        self._user_id: str = ""
+        self._password: str = ""
+        
+        # Saved login pin for reuse
+        self._saved_login_pin: str | None = None
         
     @property
     def connected(self) -> bool:
@@ -189,6 +229,15 @@ class DaelimProtocolClient:
     def set_uuid(self, uuid: str) -> None:
         """Set device UUID for authentication."""
         self._uuid = uuid
+    
+    def set_saved_login_pin(self, login_pin: str) -> None:
+        """Set a saved login pin for reuse.
+        
+        Call this before login() to try reusing an existing pin.
+        If the pin is expired, a fresh login will be performed.
+        """
+        self._saved_login_pin = login_pin
+        _LOGGER.debug("Saved login pin set: %s", login_pin)
     
     async def connect(self) -> bool:
         """Connect to the smart home server."""
@@ -334,6 +383,8 @@ class DaelimProtocolClient:
                 )
                 
                 if not response_data:
+                    self._connected = False
+                    self._logged_in = False
                     return {"error": -1, "body": {}}
                 
                 result = self._parse_response(response_data)
@@ -349,31 +400,90 @@ class DaelimProtocolClient:
                 
             except asyncio.TimeoutError:
                 _LOGGER.error("Request timeout")
+                self._connected = False
+                self._logged_in = False
                 return {"error": -1, "body": {}}
             except Exception as ex:
                 _LOGGER.error("Send/receive error: %s", ex)
+                self._connected = False
+                self._logged_in = False
                 return {"error": -1, "body": {}}
+    
+    async def _send_with_auto_relogin(
+        self,
+        msg_type: int,
+        subtype: int,
+        payload: dict,
+        timeout: float = 5.0,
+    ) -> dict:
+        """Send request with automatic re-login on session expiry.
+        
+        If the request fails with a session-related error, attempts to
+        reconnect and re-login, then retries the request once.
+        """
+        result = await self._send_and_receive(msg_type, subtype, payload, timeout)
+        
+        error = result.get("error", 0)
+        
+        # Check if we need to re-login
+        if error in self.RELOGIN_ERRORS and self._user_id and self._password:
+            _LOGGER.info("Session error %d, attempting re-login...", error)
+            
+            # Disconnect and reconnect
+            await self.disconnect()
+            
+            # Perform fresh login (don't try saved pin since it failed)
+            self._saved_login_pin = None
+            if not await self.connect():
+                return {"error": -1, "body": {}}
+            
+            login_result = await self._do_fresh_login(
+                self._user_id, self._password, self._uuid
+            )
+            
+            if login_result.get("error", 0) != ERROR_SUCCESS:
+                _LOGGER.error("Re-login failed")
+                return login_result
+            
+            _LOGGER.info("Re-login successful, retrying request...")
+            
+            # Retry the original request
+            result = await self._send_and_receive(msg_type, subtype, payload, timeout)
+        
+        return result
     
     # =========================================================================
     # Authentication
     # =========================================================================
     
     async def login(self, user_id: str, password: str, uuid: str = "") -> dict:
-        """Full login flow.
+        """Full login flow with saved pin reuse.
         
-        1. Connect (if not connected)
-        2. Get CertPin (pin=00000000, subtype=5)
-        3. Get LoginPin (pin=certpin, subtype=9)
-        4. Get Menu (pin=loginpin, subtype=7)
+        If a saved login pin is set, tries to use it first by requesting menu.
+        If that fails (expired session), performs full login flow:
+        1. Get CertPin (pin=00000000, subtype=5)
+        2. Get LoginPin (pin=certpin, subtype=9)
+        3. Get Menu (pin=loginpin, subtype=7)
         
         Returns response dict with error code and control_info.
         """
+        # Store credentials for auto-relogin
+        self._user_id = user_id
+        self._password = password
         self._uuid = uuid
         
         if not self._connected:
             if not await self.connect():
                 return {"error": -1, "body": {}}
         
+        # Always do fresh login - saved pin reuse was causing issues
+        # The server expects a fresh CertPin -> LoginPin -> Menu flow each time
+        return await self._do_fresh_login(user_id, password, uuid)
+    
+    async def _do_fresh_login(
+        self, user_id: str, password: str, uuid: str = ""
+    ) -> dict:
+        """Perform fresh login (CertPin -> LoginPin -> Menu)."""
         try:
             # Step 1: Get CertPin
             self._login_pin = "00000000"
@@ -456,7 +566,7 @@ class DaelimProtocolClient:
             "type": "query",
             "item": [{"device": device_type, "uid": "All"}]
         }
-        return await self._send_and_receive(TYPE_DEVICE, SUBTYPE_DEVICE_QUERY_REQ, payload)
+        return await self._send_with_auto_relogin(TYPE_DEVICE, SUBTYPE_DEVICE_QUERY_REQ, payload)
     
     async def control_device(
         self,
@@ -482,7 +592,7 @@ class DaelimProtocolClient:
             "item": [item]
         }
         
-        return await self._send_and_receive(TYPE_DEVICE, SUBTYPE_DEVICE_INVOKE_REQ, payload)
+        return await self._send_with_auto_relogin(TYPE_DEVICE, SUBTYPE_DEVICE_INVOKE_REQ, payload)
     
     async def set_light(
         self,
@@ -490,10 +600,17 @@ class DaelimProtocolClient:
         state: str,
         brightness: int | None = None,
     ) -> dict:
-        """Set light state."""
+        """Set light state.
+        
+        Args:
+            uid: Device UID
+            state: "on" or "off"
+            brightness: Brightness level 1-3 (optional, for dimmable lights)
+        """
         kwargs = {}
         if brightness is not None:
-            kwargs["arg2"] = brightness
+            kwargs["arg2"] = str(brightness)
+            kwargs["arg3"] = "y"  # Dimming mode indicator
         return await self.control_device(DEVICE_LIGHT, uid, state, **kwargs)
     
     async def set_heating(
@@ -537,7 +654,7 @@ class DaelimProtocolClient:
             "type": "invoke",
             "item": [{"device": "all", "uid": "all", "arg1": STATE_OFF}]
         }
-        return await self._send_and_receive(TYPE_DEVICE, SUBTYPE_DEVICE_REQ, payload)
+        return await self._send_with_auto_relogin(TYPE_DEVICE, SUBTYPE_DEVICE_INVOKE_REQ, payload)
     
     # =========================================================================
     # Security/Guard Mode
@@ -545,7 +662,7 @@ class DaelimProtocolClient:
     
     async def query_guard_mode(self) -> dict:
         """Query guard/security mode status."""
-        return await self._send_and_receive(TYPE_GUARD, SUBTYPE_SEC_QUERY_REQ, {})
+        return await self._send_with_auto_relogin(TYPE_GUARD, SUBTYPE_SEC_QUERY_REQ, {})
     
     async def set_guard_mode(
         self,
@@ -556,7 +673,7 @@ class DaelimProtocolClient:
         payload = {"mode": mode}
         if password:
             payload["pwd"] = password
-        return await self._send_and_receive(TYPE_GUARD, SUBTYPE_SEC_SET_REQ, payload)
+        return await self._send_with_auto_relogin(TYPE_GUARD, SUBTYPE_SEC_SET_REQ, payload)
     
     # =========================================================================
     # Elevator
@@ -564,13 +681,104 @@ class DaelimProtocolClient:
     
     async def call_elevator(self) -> dict:
         """Call elevator."""
-        return await self._send_and_receive(TYPE_EVCALL, SUBTYPE_EVCALL_REQ, {})
+        return await self._send_with_auto_relogin(TYPE_EVCALL, SUBTYPE_EVCALL_REQ, {})
     
     # =========================================================================
     # Energy
     # =========================================================================
     
-    async def query_energy(self) -> dict:
-        """Query current energy usage."""
-        return await self._send_and_receive(TYPE_EMS, 1, {})
+    async def query_energy_monthly(
+        self,
+        year: str | None = None,
+        month: str | None = None,
+    ) -> dict:
+        """Query monthly energy usage.
+        
+        Args:
+            year: Year string (e.g., "2025"). Defaults to current year.
+            month: Month string (e.g., "12"). Defaults to current month.
+        
+        Returns:
+            Response with energy data:
+            {
+                "queryday": "20251200",
+                "item": [
+                    {"type": "Elec", "datavalue": [current, ?, total, avg]},
+                    {"type": "Gas", "datavalue": [...]},
+                    {"type": "Water", "datavalue": [...]},
+                    {"type": "Hotwater", "datavalue": [...]},
+                    {"type": "Heating", "datavalue": [...]}
+                ]
+            }
+        """
+        import datetime
+        now = datetime.datetime.now()
+        if year is None:
+            year = str(now.year)
+        if month is None:
+            month = str(now.month)
+        
+        payload = {"year": year, "month": month}
+        return await self._send_with_auto_relogin(TYPE_EMS, SUBTYPE_EMS_MONTHLY_REQ, payload)
+    
+    async def query_energy_now(self) -> dict:
+        """Query current/real-time energy usage."""
+        return await self._send_with_auto_relogin(TYPE_EMS, SUBTYPE_EMS_NOW_REQ, {})
+    
+    async def query_energy_year(
+        self,
+        energy_type: str = ENERGY_ELEC,
+        year: str | None = None,
+    ) -> dict:
+        """Query yearly energy graph for a specific energy type.
+        
+        Args:
+            energy_type: One of "Elec", "Gas", "Water", "Hotwater", "Heating"
+            year: Year string (e.g., "2025"). Defaults to current year.
+        
+        Returns:
+            Response with monthly breakdown for the year.
+        """
+        import datetime
+        if year is None:
+            year = str(datetime.datetime.now().year)
+        
+        payload = {
+            "type": energy_type,
+            "gubun": "year",
+            "year": year,
+            "month": ""
+        }
+        return await self._send_with_auto_relogin(TYPE_EMS, SUBTYPE_EMS_GRAPH_REQ, payload)
+    
+    async def query_energy_month(
+        self,
+        energy_type: str = ENERGY_ELEC,
+        year: str | None = None,
+        month: str | None = None,
+    ) -> dict:
+        """Query monthly energy graph for a specific energy type.
+        
+        Args:
+            energy_type: One of "Elec", "Gas", "Water", "Hotwater", "Heating"
+            year: Year string (e.g., "2025"). Defaults to current year.
+            month: Month string (e.g., "12"). Defaults to current month.
+        
+        Returns:
+            Response with daily breakdown for the month.
+        """
+        import datetime
+        now = datetime.datetime.now()
+        if year is None:
+            year = str(now.year)
+        if month is None:
+            month = str(now.month)
+        
+        payload = {
+            "type": energy_type,
+            "gubun": "month",
+            "year": year,
+            "month": month
+        }
+        return await self._send_with_auto_relogin(TYPE_EMS, SUBTYPE_EMS_GRAPH_REQ, payload)
 

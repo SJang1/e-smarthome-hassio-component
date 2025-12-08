@@ -21,6 +21,7 @@ from .const import (
     CONF_HO,
     CONF_CONTROL_INFO,
     CONF_DEVICE_UUID,
+    CONF_LOGIN_PIN,
     DEFAULT_INTERNAL_PORT,
 )
 from .api import DaelimSmartHomeAPI
@@ -36,6 +37,7 @@ PLATFORMS: list[Platform] = [
     Platform.FAN,
     Platform.ALARM_CONTROL_PANEL,
     Platform.BUTTON,
+    Platform.SENSOR,
 ]
 
 CONFIG_SCHEMA = cv.config_entry_only_config_schema(DOMAIN)

@@ -317,6 +317,9 @@ class DaelimSmartHomeAPI:
         Uses the proprietary binary protocol discovered from Wireshark analysis.
         Authentication flow: CertPin -> LoginPin -> Menu
         
+        If a saved login_pin exists, tries to reuse it first.
+        If expired, performs fresh login automatically.
+        
         Returns:
             True if connected and logged in successfully
         """
@@ -333,6 +336,11 @@ class DaelimSmartHomeAPI:
                 port=self.DEFAULT_PORT,
             )
             
+            # Try to reuse saved login pin if available
+            if self._login_pin:
+                _LOGGER.info("Setting saved login pin for reuse")
+                self._protocol_client.set_saved_login_pin(self._login_pin)
+            
             # Connect and login with UUID
             login_response = await self._protocol_client.login(
                 self._username,
@@ -347,6 +355,10 @@ class DaelimSmartHomeAPI:
                     MESSAGE_ERR.get(error, f"Error {error}")
                 )
                 return False
+            
+            # Save the login pin for future reconnections
+            self._login_pin = self._protocol_client.login_pin
+            _LOGGER.debug("Saved login pin: %s", self._login_pin)
             
             # Parse control info from login response
             control_info = self._protocol_client.control_info
@@ -365,12 +377,33 @@ class DaelimSmartHomeAPI:
                 await self._protocol_client.disconnect()
                 self._protocol_client = None
             return False
+    
+    @property
+    def saved_login_pin(self) -> str | None:
+        """Return saved login pin for persistence."""
+        return self._login_pin
+    
+    def set_saved_login_pin(self, login_pin: str) -> None:
+        """Set saved login pin from persistent storage."""
+        self._login_pin = login_pin
 
     async def disconnect_protocol(self) -> None:
         """Disconnect protocol client."""
         if self._protocol_client:
             await self._protocol_client.disconnect()
             self._protocol_client = None
+
+    async def ensure_protocol_connected(self) -> bool:
+        """Ensure protocol client is connected, reconnecting if necessary.
+        
+        Returns:
+            True if connected (or reconnected successfully)
+        """
+        if self._protocol_client and self._protocol_client.connected:
+            return True
+        
+        _LOGGER.info("Protocol client disconnected, attempting to reconnect...")
+        return await self.connect_protocol()
 
     async def get_initial_session(self) -> bool:
         """Get initial JSESSIONID by visiting intro page."""
@@ -862,10 +895,16 @@ class DaelimSmartHomeAPI:
             return False
         
         try:
-            # Convert 0-255 to 1-9 (Daelim uses 1-9 for dimming)
+            # Convert 0-255 to dimming levels 1, 3, 6 (Daelim dimming values)
             dim_level = None
             if brightness is not None:
-                dim_level = max(1, min(9, int(brightness / 255 * 9)))
+                # Map: 0-85 -> 1 (low), 86-170 -> 3 (medium), 171-255 -> 6 (high)
+                if brightness <= 85:
+                    dim_level = 1
+                elif brightness <= 170:
+                    dim_level = 3
+                else:
+                    dim_level = 6
             
             response = await self._protocol_client.set_light(uid, state, dim_level)
             if response.get("error", 0) == ERROR_SUCCESS:
@@ -1072,13 +1111,25 @@ class DaelimSmartHomeAPI:
             return False
 
     async def query_energy(self) -> dict | None:
-        """Query current energy usage."""
+        """Query current energy usage (alias for query_energy_monthly)."""
+        return await self.query_energy_monthly()
+
+    async def query_energy_monthly(
+        self,
+        year: str | None = None,
+        month: str | None = None,
+    ) -> dict | None:
+        """Query monthly energy usage.
+        
+        Returns:
+            Energy data dict with items for each type (Elec, Gas, Water, etc.)
+        """
         if not self._protocol_client or not self._protocol_client.connected:
             _LOGGER.debug("Cannot query energy: protocol client not connected")
             return None
         
         try:
-            response = await self._protocol_client.query_energy()
+            response = await self._protocol_client.query_energy_monthly(year, month)
             if response.get("error", 0) == ERROR_SUCCESS:
                 return response.get("body", {})
             else:
@@ -1091,6 +1142,47 @@ class DaelimSmartHomeAPI:
         except Exception as ex:
             _LOGGER.error("Error querying energy: %s", ex)
             return None
+
+    async def query_energy_year(
+        self,
+        energy_type: str = "Elec",
+        year: str | None = None,
+    ) -> dict | None:
+        """Query yearly energy graph for a specific energy type.
+        
+        Returns:
+            Energy data dict with monthly breakdown for the year.
+        """
+        if not self._protocol_client or not self._protocol_client.connected:
+            _LOGGER.debug("Cannot query energy year: protocol client not connected")
+            return None
+        
+        try:
+            response = await self._protocol_client.query_energy_year(energy_type, year)
+            if response.get("error", 0) == ERROR_SUCCESS:
+                return response.get("body", {})
+            else:
+                error = response.get("error", -1)
+                _LOGGER.warning(
+                    "Energy year query failed: %s",
+                    MESSAGE_ERR.get(error, f"Error {error}")
+                )
+                return None
+        except Exception as ex:
+            _LOGGER.error("Error querying energy year: %s", ex)
+            return None
+
+    async def query_all_energy_yearly(self) -> dict[str, dict | None]:
+        """Query yearly energy data for all energy types.
+        
+        Returns:
+            Dict mapping energy type to yearly data.
+        """
+        energy_types = ["Elec", "Gas", "Water", "Hotwater", "Heating"]
+        results = {}
+        for energy_type in energy_types:
+            results[energy_type] = await self.query_energy_year(energy_type)
+        return results
 
     async def _api_request(
         self,

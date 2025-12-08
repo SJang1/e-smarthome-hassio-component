@@ -9,6 +9,7 @@ CONF_DONG: Final = "dong"
 CONF_HO: Final = "ho"
 CONF_CONTROL_INFO: Final = "control_info"  # Stored device configuration
 CONF_DEVICE_UUID: Final = "device_uuid"  # Device UUID for protocol authentication
+CONF_LOGIN_PIN: Final = "login_pin"  # Saved login pin for session reuse
 
 # API Constants
 DEFAULT_HOST: Final = "smarthome.daelim.co.kr"

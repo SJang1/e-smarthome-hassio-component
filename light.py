@@ -91,10 +91,17 @@ class DaelimLight(DaelimEntity, LightEntity):
         
         state = self.device_state
         if state and state.get("arg1") == STATE_ON:
-            # Daelim uses 1-9 for brightness, convert to 0-255
+            # Daelim uses 1, 3, 6 for brightness levels, convert to 0-255
+            # arg3="y" indicates dimming mode is active
             try:
-                dim_level = int(state.get("arg2", "5"))
-                return int(dim_level / 9 * 255)
+                dim_level = int(state.get("arg2", "6"))
+                # Map: 1 -> 85 (low), 3 -> 170 (medium), 6 -> 255 (high)
+                if dim_level <= 1:
+                    return 85
+                elif dim_level <= 3:
+                    return 170
+                else:
+                    return 255
             except (ValueError, TypeError):
                 return 255
         return None
