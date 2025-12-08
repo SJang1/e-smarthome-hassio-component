@@ -1,0 +1,129 @@
+{
+  "config": {
+    "step": {
+      "user": {
+        "title": "Select Apartment (단지 선택)",
+        "description": "Found {apartment_count} apartments. Select your apartment complex.",
+        "data": {
+          "apart_id": "Apartment (단지)"
+        },
+        "data_description": {
+          "apart_id": "Select your e편한세상 apartment complex"
+        }
+      },
+      "dong": {
+        "title": "Select Building (동 선택)",
+        "description": "Select your building number at {apartment_name}",
+        "data": {
+          "dong": "Building Number (동)"
+        },
+        "data_description": {
+          "dong": "Your building/dong number"
+        }
+      },
+      "credentials": {
+        "title": "Login Credentials (로그인 정보)",
+        "description": "Enter your e편한세상 app credentials for {apartment_name} {dong}동",
+        "data": {
+          "username": "Username (아이디)",
+          "password": "Password (비밀번호)",
+          "ho": "Unit Number (호)"
+        },
+        "data_description": {
+          "username": "Your e편한세상 app login ID",
+          "password": "Your e편한세상 app password",
+          "ho": "Your unit number (e.g., 1204)"
+        }
+      },
+      "manual": {
+        "title": "Manual Configuration",
+        "description": "Could not fetch apartment list. Enter configuration manually.",
+        "data": {
+          "host": "Server Host",
+          "username": "Username (아이디)",
+          "password": "Password (비밀번호)",
+          "apart_id": "Apartment ID (단지 ID)",
+          "dong": "Building Number (동)",
+          "ho": "Unit Number (호)"
+        },
+        "data_description": {
+          "host": "Usually smarthome.daelim.co.kr",
+          "apart_id": "e.g., 224 (can be found from app network logs)",
+          "dong": "Building number (e.g., 104)",
+          "ho": "Unit number (e.g., 1204)"
+        }
+      }
+    },
+    "error": {
+      "cannot_connect": "Failed to connect to Daelim Smart Home server",
+      "invalid_auth": "Invalid authentication credentials",
+      "invalid_apartment": "Invalid apartment selection",
+      "unknown": "Unknown error occurred"
+    },
+    "abort": {
+      "already_configured": "This apartment is already configured"
+    }
+  },
+  "options": {
+    "step": {
+      "init": {
+        "title": "Daelim Smart Home Options",
+        "menu_options": {
+          "device_config": "Configure Devices (장치 설정)"
+        }
+      },
+      "device_config": {
+        "title": "Device Configuration (장치 설정)",
+        "description": "If the protocol connection to your apartment server fails, you can manually enter device configuration here. This should be a JSON object with device UIDs obtained from HAR capture or previous successful connections.\n\nExample format:\n{example_config}",
+        "data": {
+          "control_info": "Device Configuration JSON"
+        },
+        "data_description": {
+          "control_info": "JSON with light, heating, gas, wallsocket device definitions"
+        }
+      }
+    },
+    "error": {
+      "invalid_json": "Invalid JSON format",
+      "invalid_device_config": "Configuration must contain at least one of: light, heating, gas, fan, wallsocket"
+    }
+  },
+  "entity": {
+    "light": {
+      "all_lights": {
+        "name": "All Lights (전체 조명)"
+      }
+    },
+    "switch": {
+      "gas": {
+        "name": "Gas Valve (가스)"
+      },
+      "wallsocket": {
+        "name": "Standby Power (대기전력)"
+      },
+      "all_off": {
+        "name": "All Off (일괄차단)"
+      }
+    },
+    "climate": {
+      "heating": {
+        "name": "Heating (난방)"
+      }
+    },
+    "fan": {
+      "ventilation": {
+        "name": "Ventilation (환기)"
+      }
+    },
+    "alarm_control_panel": {
+      "security": {
+        "name": "Security Mode (방범모드)"
+      }
+    },
+    "button": {
+      "elevator": {
+        "name": "Elevator Call (엘리베이터 호출)"
+      }
+    }
+  }
+}

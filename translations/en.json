@@ -1,0 +1,72 @@
+{
+  "config": {
+    "step": {
+      "user": {
+        "title": "Daelim Smart Home (e편한세상)",
+        "description": "Set up your Daelim Smart Home integration. You'll need your apartment information and login credentials.",
+        "data": {
+          "host": "Server Host",
+          "username": "Username",
+          "password": "Password",
+          "apart_id": "Apartment ID",
+          "dong": "Building Number",
+          "ho": "Unit Number",
+          "danji_name": "Complex Name"
+        },
+        "data_description": {
+          "host": "Usually smarthome.daelim.co.kr",
+          "apart_id": "e.g., 224 (can be found from the app network logs)",
+          "dong": "Building number (e.g., 104)",
+          "ho": "Unit number (e.g., 1204)",
+          "danji_name": "Leave empty to auto-discover from Apartment ID"
+        }
+      }
+    },
+    "error": {
+      "cannot_connect": "Failed to connect to Daelim Smart Home server",
+      "invalid_auth": "Invalid authentication credentials",
+      "unknown": "Unknown error occurred"
+    },
+    "abort": {
+      "already_configured": "This apartment is already configured"
+    }
+  },
+  "entity": {
+    "light": {
+      "all_lights": {
+        "name": "All Lights"
+      }
+    },
+    "switch": {
+      "gas": {
+        "name": "Gas Valve"
+      },
+      "wallsocket": {
+        "name": "Standby Power Outlet"
+      },
+      "all_off": {
+        "name": "All Off"
+      }
+    },
+    "climate": {
+      "heating": {
+        "name": "Heating"
+      }
+    },
+    "fan": {
+      "ventilation": {
+        "name": "Ventilation"
+      }
+    },
+    "alarm_control_panel": {
+      "security": {
+        "name": "Security Mode"
+      }
+    },
+    "button": {
+      "elevator": {
+        "name": "Elevator Call"
+      }
+    }
+  }
+}

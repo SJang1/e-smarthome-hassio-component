@@ -1,0 +1,12 @@
+{
+  "domain": "daelim_smarthome",
+  "name": "Daelim Smart Home (e편한세상)",
+  "codeowners": [],
+  "config_flow": true,
+  "dependencies": [],
+  "documentation": "https://github.com/your-repo/daelim-smarthome-hass",
+  "iot_class": "cloud_polling",
+  "issue_tracker": "https://github.com/your-repo/daelim-smarthome-hass/issues",
+  "requirements": ["aiohttp>=3.8.0"],
+  "version": "1.0.0"
+}
