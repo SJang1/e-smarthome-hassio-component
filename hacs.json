@@ -2,5 +2,6 @@
   "name": "Daelim Smart Home (e편한세상)",
   "homeassistant": "2024.1.0",
   "render_readme": true,
-  "country": ["KR"]
+  "country": ["KR"],
+  "content_in_root": true
 }
