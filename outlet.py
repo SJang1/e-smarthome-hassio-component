@@ -49,7 +49,12 @@ class DaelimOutletSwitch(DaelimEntity, SwitchEntity):
         """Return true if outlet is on."""
         state = self.device_state
         if state:
-            return state.get("arg1") == STATE_ON
+            arg1 = state.get("arg1")
+            _LOGGER.debug("Outlet %s state: arg1=%s (type=%s), full_state=%s", 
+                         self._uid, arg1, type(arg1).__name__, state)
+            # Check for both string "on" and possible variations
+            return arg1 == STATE_ON or arg1 == "On" or arg1 == "ON" or arg1 == True or arg1 == 1 or arg1 == "1"
+        _LOGGER.debug("Outlet %s: no device_state found", self._uid)
         return False
 
     async def async_turn_on(self, **kwargs: Any) -> None:

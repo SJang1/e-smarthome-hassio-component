@@ -817,34 +817,84 @@ class DaelimSmartHomeAPI:
     async def query_all_devices(self) -> dict[str, dict]:
         """Query all device states."""
         try:
-            # Query lights
-            await self._query_device_type(DEVICE_LIGHT)
+            # Query lights (if any configured)
+            if self._lights:
+                _LOGGER.debug("Querying lights (%d devices)...", len(self._lights))
+                await self._query_device_type_safe(DEVICE_LIGHT)
             
-            # Query heating
-            await self._query_device_type(DEVICE_HEATING)
+            # Query heating (if any configured)
+            if self._heating:
+                _LOGGER.debug("Querying heating (%d devices)...", len(self._heating))
+                await self._query_device_type_safe(DEVICE_HEATING)
             
-            # Query gas
-            await self._query_device_type(DEVICE_GAS)
+            # Query gas (if any configured)
+            if self._gas:
+                _LOGGER.debug("Querying gas (%d devices)...", len(self._gas))
+                await self._query_device_type_safe(DEVICE_GAS)
             
-            # Query fan
-            await self._query_device_type(DEVICE_FAN)
+            # Query fan (if any configured)
+            if self._fan:
+                _LOGGER.debug("Querying fan (%d devices)...", len(self._fan))
+                await self._query_device_type_safe(DEVICE_FAN)
+            else:
+                _LOGGER.debug("Skipping fan query - no fan devices configured")
             
-            # Query wallsockets
-            await self._query_device_type(DEVICE_WALLSOCKET)
+            # Small delay before wallsocket query to ensure connection is stable
+            await asyncio.sleep(0.3)
+            
+            # Query wallsockets (use longer timeout - these can be slow, ~7s observed)
+            if self._wallsocket:
+                _LOGGER.debug("Querying wallsockets (%d devices, may take up to 20s)...", len(self._wallsocket))
+                await self._query_device_type_safe(DEVICE_WALLSOCKET, timeout=20.0)
             
             # Query guard mode
-            await self._query_guard_mode()
+            _LOGGER.debug("Querying guard mode...")
+            await self._query_guard_mode_safe()
             
+            _LOGGER.debug("All device queries complete. States: %d devices", len(self._device_states))
             return self._device_states
             
         except Exception as ex:
             _LOGGER.error("Error querying devices: %s", ex)
             return self._device_states
 
-    async def _query_device_type(self, device_type: str) -> None:
+    async def _ensure_protocol_for_query(self) -> bool:
+        """Ensure protocol is connected for a device query, reconnecting if needed."""
+        if self._protocol_client and self._protocol_client.connected:
+            return True
+        
+        _LOGGER.debug("Protocol disconnected, reconnecting for query...")
+        return await self.connect_protocol()
+
+    async def _query_device_type_safe(self, device_type: str, timeout: float = 10.0) -> None:
+        """Query devices of a specific type with auto-reconnection.
+        
+        This method ensures the connection is alive before querying and
+        won't let a timeout break the entire query chain.
+        """
+        # Ensure connected before query
+        if not await self._ensure_protocol_for_query():
+            _LOGGER.warning("Cannot query %s - failed to connect", device_type)
+            return
+        
+        await self._query_device_type(device_type, timeout)
+
+    async def _query_guard_mode_safe(self) -> None:
+        """Query guard mode with auto-reconnection."""
+        if not await self._ensure_protocol_for_query():
+            _LOGGER.warning("Cannot query guard mode - failed to connect")
+            return
+        
+        await self._query_guard_mode()
+
+    async def _query_device_type(self, device_type: str, timeout: float = 10.0) -> None:
         """Query devices of a specific type.
         
         Uses protocol client if connected, otherwise logs warning.
+        
+        Args:
+            device_type: Type of device to query
+            timeout: Request timeout in seconds (default 10s)
         """
         if not self._protocol_client or not self._protocol_client.connected:
             _LOGGER.debug(
@@ -855,7 +905,7 @@ class DaelimSmartHomeAPI:
             return
         
         try:
-            response = await self._protocol_client.query_devices(device_type)
+            response = await self._protocol_client.query_devices(device_type, timeout=timeout)
             if response.get("error", 0) == ERROR_SUCCESS:
                 body = response.get("body", {})
                 items = body.get("item", [])

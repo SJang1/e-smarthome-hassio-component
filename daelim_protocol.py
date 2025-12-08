@@ -405,22 +405,43 @@ class DaelimProtocolClient:
                 message = self._build_message(msg_type, subtype, payload)
                 
                 _LOGGER.debug(
-                    "Sending: type=%d, subtype=%d, pin=%s",
-                    msg_type, subtype, self._login_pin
+                    "Sending: type=%d, subtype=%d, pin=%s, timeout=%.1f",
+                    msg_type, subtype, self._login_pin, timeout
                 )
                 
                 writer.write(message)
                 await writer.drain()
                 
-                response_data = await asyncio.wait_for(
-                    reader.read(8192),
+                # Read response with proper framing:
+                # First 4 bytes contain the length of the rest of the message
+                length_bytes = await asyncio.wait_for(
+                    reader.readexactly(4),
                     timeout=timeout
                 )
                 
-                if not response_data:
-                    _LOGGER.warning("Empty response received, connection lost")
+                if not length_bytes or len(length_bytes) < 4:
+                    _LOGGER.warning("Failed to read length header, connection lost")
                     await self.disconnect()
                     return {"error": -1, "body": {}}
+                
+                # Parse length (big-endian 4-byte integer)
+                remaining_length = struct.unpack('>I', length_bytes)[0]
+                _LOGGER.debug("Response length header: %d bytes remaining", remaining_length)
+                
+                # Now read the rest of the message
+                remaining_data = await asyncio.wait_for(
+                    reader.readexactly(remaining_length),
+                    timeout=timeout
+                )
+                
+                if not remaining_data or len(remaining_data) < remaining_length:
+                    _LOGGER.warning("Incomplete response received")
+                    await self.disconnect()
+                    return {"error": -1, "body": {}}
+                
+                # Combine length bytes with the rest for parsing
+                response_data = length_bytes + remaining_data
+                _LOGGER.debug("Total response: %d bytes", len(response_data))
                 
                 result = self._parse_response(response_data)
                 
@@ -435,6 +456,11 @@ class DaelimProtocolClient:
                 
             except asyncio.TimeoutError:
                 _LOGGER.error("Request timeout")
+                await self.disconnect()
+                return {"error": -1, "body": {}}
+            except asyncio.IncompleteReadError as ex:
+                _LOGGER.error("Connection closed during read: expected %d bytes, got %d", 
+                             ex.expected, len(ex.partial))
                 await self.disconnect()
                 return {"error": -1, "body": {}}
             except Exception as ex:
@@ -707,13 +733,18 @@ class DaelimProtocolClient:
     # Device Control
     # =========================================================================
     
-    async def query_devices(self, device_type: str = "light") -> dict:
-        """Query device states."""
+    async def query_devices(self, device_type: str = "light", timeout: float = 10.0) -> dict:
+        """Query device states.
+        
+        Args:
+            device_type: Type of device to query (light, heating, gas, fan, wallsocket)
+            timeout: Request timeout in seconds (default 10s, some devices are slow)
+        """
         payload = {
             "type": "query",
             "item": [{"device": device_type, "uid": "All"}]
         }
-        return await self._send_with_auto_relogin(TYPE_DEVICE, SUBTYPE_DEVICE_QUERY_REQ, payload)
+        return await self._send_with_auto_relogin(TYPE_DEVICE, SUBTYPE_DEVICE_QUERY_REQ, payload, timeout=timeout)
     
     async def control_device(
         self,
