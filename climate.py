@@ -72,8 +72,14 @@ class DaelimClimate(DaelimEntity, ClimateEntity):
     def hvac_mode(self) -> HVACMode:
         """Return current HVAC mode."""
         state = self.device_state
-        if state and state.get("arg1") == STATE_ON:
-            return HVACMode.HEAT
+        if state:
+            arg1 = state.get("arg1")
+            _LOGGER.debug("Climate %s state: arg1=%s, arg2(target)=%s, arg3(current)=%s, full_state=%s", 
+                         self._uid, arg1, state.get("arg2"), state.get("arg3"), state)
+            if arg1 == STATE_ON:
+                return HVACMode.HEAT
+        else:
+            _LOGGER.debug("Climate %s: no device_state found", self._uid)
         return HVACMode.OFF
 
     @property

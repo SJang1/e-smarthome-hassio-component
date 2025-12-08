@@ -80,7 +80,11 @@ class DaelimLight(DaelimEntity, LightEntity):
         """Return true if light is on."""
         state = self.device_state
         if state:
-            return state.get("arg1") == STATE_ON
+            arg1 = state.get("arg1")
+            _LOGGER.debug("Light %s state: arg1=%s, full_state=%s", 
+                         self._uid, arg1, state)
+            return arg1 == STATE_ON
+        _LOGGER.debug("Light %s: no device_state found", self._uid)
         return False
 
     @property

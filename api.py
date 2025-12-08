@@ -815,47 +815,58 @@ class DaelimSmartHomeAPI:
             return {}
 
     async def query_all_devices(self) -> dict[str, dict]:
-        """Query all device states."""
+        """Query all device states in a single batch request.
+        
+        This is much more efficient than querying each device type separately.
+        Takes about 10 seconds for all devices instead of 20+ seconds sequentially.
+        """
+        if not self._protocol_client or not self._protocol_client.connected:
+            _LOGGER.debug("Protocol client not connected for batch query, attempting to connect...")
+            if not await self.connect_protocol():
+                _LOGGER.warning("Cannot query devices - failed to connect")
+                return self._device_states
+        
         try:
-            # Query lights (if any configured)
-            if self._lights:
-                _LOGGER.debug("Querying lights (%d devices)...", len(self._lights))
-                await self._query_device_type_safe(DEVICE_LIGHT)
+            _LOGGER.debug("Querying ALL devices in single batch request...")
             
-            # Query heating (if any configured)
-            if self._heating:
-                _LOGGER.debug("Querying heating (%d devices)...", len(self._heating))
-                await self._query_device_type_safe(DEVICE_HEATING)
+            # Use the batch query method (15s timeout for all devices)
+            response = await self._protocol_client.query_all_devices(timeout=15.0)
             
-            # Query gas (if any configured)
-            if self._gas:
-                _LOGGER.debug("Querying gas (%d devices)...", len(self._gas))
-                await self._query_device_type_safe(DEVICE_GAS)
-            
-            # Query fan (if any configured)
-            if self._fan:
-                _LOGGER.debug("Querying fan (%d devices)...", len(self._fan))
-                await self._query_device_type_safe(DEVICE_FAN)
+            if response.get("error", 0) == ERROR_SUCCESS:
+                body = response.get("body", {})
+                items = body.get("item", [])
+                
+                # Count by device type for logging
+                type_counts = {}
+                
+                for item in items:
+                    device = item.get("device", "unknown")
+                    uid = item.get("uid", "")
+                    key = f"{device}_{uid}"
+                    self._device_states[key] = item
+                    
+                    # Count for logging
+                    type_counts[device] = type_counts.get(device, 0) + 1
+                
+                _LOGGER.info(
+                    "Batch query complete: %d devices (%s)",
+                    len(items),
+                    ", ".join(f"{k}={v}" for k, v in type_counts.items())
+                )
             else:
-                _LOGGER.debug("Skipping fan query - no fan devices configured")
+                error = response.get("error", -1)
+                _LOGGER.warning(
+                    "Batch device query failed: %s",
+                    MESSAGE_ERR.get(error, f"Error {error}")
+                )
             
-            # Small delay before wallsocket query to ensure connection is stable
-            await asyncio.sleep(0.3)
-            
-            # Query wallsockets (use longer timeout - these can be slow, ~7s observed)
-            if self._wallsocket:
-                _LOGGER.debug("Querying wallsockets (%d devices, may take up to 20s)...", len(self._wallsocket))
-                await self._query_device_type_safe(DEVICE_WALLSOCKET, timeout=20.0)
-            
-            # Query guard mode
-            _LOGGER.debug("Querying guard mode...")
+            # Query guard mode separately (not included in device batch)
             await self._query_guard_mode_safe()
             
-            _LOGGER.debug("All device queries complete. States: %d devices", len(self._device_states))
             return self._device_states
             
         except Exception as ex:
-            _LOGGER.error("Error querying devices: %s", ex)
+            _LOGGER.error("Error in batch device query: %s", ex)
             return self._device_states
 
     async def _ensure_protocol_for_query(self) -> bool:
@@ -865,19 +876,6 @@ class DaelimSmartHomeAPI:
         
         _LOGGER.debug("Protocol disconnected, reconnecting for query...")
         return await self.connect_protocol()
-
-    async def _query_device_type_safe(self, device_type: str, timeout: float = 10.0) -> None:
-        """Query devices of a specific type with auto-reconnection.
-        
-        This method ensures the connection is alive before querying and
-        won't let a timeout break the entire query chain.
-        """
-        # Ensure connected before query
-        if not await self._ensure_protocol_for_query():
-            _LOGGER.warning("Cannot query %s - failed to connect", device_type)
-            return
-        
-        await self._query_device_type(device_type, timeout)
 
     async def _query_guard_mode_safe(self) -> None:
         """Query guard mode with auto-reconnection."""

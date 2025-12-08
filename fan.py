@@ -87,7 +87,11 @@ class DaelimFan(DaelimEntity, FanEntity):
         """Return true if fan is on."""
         state = self.device_state
         if state:
-            return state.get("arg1") == STATE_ON
+            arg1 = state.get("arg1")
+            _LOGGER.debug("Fan %s state: arg1=%s, arg2(speed)=%s, arg3(mode)=%s, full_state=%s", 
+                         self._uid, arg1, state.get("arg2"), state.get("arg3"), state)
+            return arg1 == STATE_ON
+        _LOGGER.debug("Fan %s: no device_state found", self._uid)
         return False
 
     @property

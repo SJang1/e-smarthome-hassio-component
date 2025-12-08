@@ -734,7 +734,7 @@ class DaelimProtocolClient:
     # =========================================================================
     
     async def query_devices(self, device_type: str = "light", timeout: float = 10.0) -> dict:
-        """Query device states.
+        """Query device states for a single device type.
         
         Args:
             device_type: Type of device to query (light, heating, gas, fan, wallsocket)
@@ -743,6 +743,30 @@ class DaelimProtocolClient:
         payload = {
             "type": "query",
             "item": [{"device": device_type, "uid": "All"}]
+        }
+        return await self._send_with_auto_relogin(TYPE_DEVICE, SUBTYPE_DEVICE_QUERY_REQ, payload, timeout=timeout)
+
+    async def query_all_devices(self, timeout: float = 15.0) -> dict:
+        """Query ALL device states in a single request.
+        
+        This is more efficient than querying each device type separately.
+        Uses multiple items in one request to get all device types at once.
+        
+        Args:
+            timeout: Request timeout in seconds (default 15s for batch query)
+        
+        Returns:
+            Response dict with 'body' containing 'item' list of all devices
+        """
+        payload = {
+            "type": "query",
+            "item": [
+                {"device": "light", "uid": "All"},
+                {"device": "heating", "uid": "All"},
+                {"device": "gas", "uid": "All"},
+                {"device": "fan", "uid": "All"},
+                {"device": "wallsocket", "uid": "All"}
+            ]
         }
         return await self._send_with_auto_relogin(TYPE_DEVICE, SUBTYPE_DEVICE_QUERY_REQ, payload, timeout=timeout)
     

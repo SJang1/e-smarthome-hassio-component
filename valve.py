@@ -75,7 +75,11 @@ class DaelimGasValve(DaelimEntity, ValveEntity):
         """Return true if gas valve is closed."""
         state = self.device_state
         if state:
-            return state.get("arg1") != STATE_ON
+            arg1 = state.get("arg1")
+            _LOGGER.debug("Gas valve %s state: arg1=%s, full_state=%s", 
+                         self._uid, arg1, state)
+            return arg1 != STATE_ON
+        _LOGGER.debug("Gas valve %s: no device_state found", self._uid)
         return True  # Default to closed for safety
 
     async def async_open_valve(self, **kwargs: Any) -> None:
