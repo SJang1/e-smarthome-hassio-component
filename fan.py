@@ -150,12 +150,14 @@ class DaelimFan(DaelimEntity, FanEntity):
             speed=speed_code,
             mode=mode_code,
         )
-        await self.coordinator.async_request_refresh()
+        # Notify HA of immediate state change
+        self.async_write_ha_state()
 
     async def async_turn_off(self, **kwargs: Any) -> None:
         """Turn off the fan."""
         await self.coordinator.api.set_fan(self._uid, STATE_OFF)
-        await self.coordinator.async_request_refresh()
+        # Notify HA of immediate state change
+        self.async_write_ha_state()
 
     async def async_set_percentage(self, percentage: int) -> None:
         """Set the speed percentage."""
@@ -164,7 +166,8 @@ class DaelimFan(DaelimEntity, FanEntity):
         else:
             speed_code = percentage_to_ordered_list_item(SPEED_LEVELS, percentage)
             await self.coordinator.api.set_fan(self._uid, STATE_ON, speed=speed_code)
-            await self.coordinator.async_request_refresh()
+            # Notify HA of immediate state change
+            self.async_write_ha_state()
 
     async def async_set_preset_mode(self, preset_mode: str) -> None:
         """Set preset mode."""
@@ -176,4 +179,5 @@ class DaelimFan(DaelimEntity, FanEntity):
         
         if mode_code:
             await self.coordinator.api.set_fan(self._uid, STATE_ON, mode=mode_code)
-            await self.coordinator.async_request_refresh()
+            # Notify HA of immediate state change
+            self.async_write_ha_state()

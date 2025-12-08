@@ -947,6 +947,23 @@ class DaelimSmartHomeAPI:
         except Exception as ex:
             _LOGGER.error("Error querying guard mode: %s", ex)
 
+    def _update_device_state_from_response(self, response: dict) -> None:
+        """Update device state immediately from control response.
+        
+        The response contains the new device state, so we can update
+        the cached state without waiting for the next polling cycle.
+        """
+        body = response.get("body", {})
+        items = body.get("item", [])
+        
+        for item in items:
+            device = item.get("device", "")
+            uid = item.get("uid", "")
+            if device and uid:
+                key = f"{device}_{uid}"
+                self._device_states[key] = item
+                _LOGGER.debug("Immediate state update for %s: %s", key, item)
+
     async def set_light(self, uid: str, state: str, brightness: int | None = None) -> bool:
         """Set light state."""
         # Ensure protocol is connected before attempting control
@@ -978,6 +995,8 @@ class DaelimSmartHomeAPI:
                     error = response.get("error", -1)
             
             if error == ERROR_SUCCESS:
+                # Update state immediately from response
+                self._update_device_state_from_response(response)
                 _LOGGER.debug("Light %s set to %s", uid, state)
                 return True
             else:
@@ -999,6 +1018,8 @@ class DaelimSmartHomeAPI:
         try:
             response = await self._protocol_client.set_light("all", state)
             if response.get("error", 0) == ERROR_SUCCESS:
+                # Update all light states immediately from response
+                self._update_device_state_from_response(response)
                 _LOGGER.debug("All lights set to %s", state)
                 return True
             else:
@@ -1027,6 +1048,8 @@ class DaelimSmartHomeAPI:
             temp = int(temperature) if temperature is not None else None
             response = await self._protocol_client.set_heating(uid, state, temp)
             if response.get("error", 0) == ERROR_SUCCESS:
+                # Update state immediately from response
+                self._update_device_state_from_response(response)
                 _LOGGER.debug("Heating %s set to %s (temp=%s)", uid, state, temp)
                 return True
             else:
@@ -1049,6 +1072,8 @@ class DaelimSmartHomeAPI:
         try:
             response = await self._protocol_client.set_gas(uid, state)
             if response.get("error", 0) == ERROR_SUCCESS:
+                # Update state immediately from response
+                self._update_device_state_from_response(response)
                 _LOGGER.debug("Gas %s set to %s", uid, state)
                 return True
             else:
@@ -1077,6 +1102,8 @@ class DaelimSmartHomeAPI:
         try:
             response = await self._protocol_client.set_fan(uid, state, speed, mode)
             if response.get("error", 0) == ERROR_SUCCESS:
+                # Update state immediately from response
+                self._update_device_state_from_response(response)
                 _LOGGER.debug("Fan %s set to %s (speed=%s, mode=%s)", uid, state, speed, mode)
                 return True
             else:
@@ -1099,6 +1126,8 @@ class DaelimSmartHomeAPI:
         try:
             response = await self._protocol_client.set_wallsocket(uid, state)
             if response.get("error", 0) == ERROR_SUCCESS:
+                # Update state immediately from response
+                self._update_device_state_from_response(response)
                 _LOGGER.debug("Wallsocket %s set to %s", uid, state)
                 return True
             else:

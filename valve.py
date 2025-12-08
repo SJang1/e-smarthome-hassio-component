@@ -88,9 +88,11 @@ class DaelimGasValve(DaelimEntity, ValveEntity):
             "Opening gas valve remotely - please verify this is allowed by your system"
         )
         await self.coordinator.api.set_gas(self._uid, STATE_ON)
-        await self.coordinator.async_request_refresh()
+        # Notify HA of immediate state change
+        self.async_write_ha_state()
 
     async def async_close_valve(self, **kwargs: Any) -> None:
         """Close gas valve (safety lock)."""
         await self.coordinator.api.set_gas(self._uid, STATE_OFF)
-        await self.coordinator.async_request_refresh()
+        # Notify HA of immediate state change
+        self.async_write_ha_state()

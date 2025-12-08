@@ -129,7 +129,8 @@ class DaelimClimate(DaelimEntity, ClimateEntity):
         else:
             await self.coordinator.api.set_heating(self._uid, STATE_OFF)
         
-        await self.coordinator.async_request_refresh()
+        # Notify HA of immediate state change
+        self.async_write_ha_state()
 
     async def async_set_temperature(self, **kwargs: Any) -> None:
         """Set target temperature."""
@@ -143,4 +144,5 @@ class DaelimClimate(DaelimEntity, ClimateEntity):
             STATE_ON, 
             temperature
         )
-        await self.coordinator.async_request_refresh()
+        # Notify HA of immediate state change
+        self.async_write_ha_state()

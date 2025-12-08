@@ -76,9 +76,11 @@ class DaelimAlarmPanel(AlarmControlPanelEntity):
     async def async_alarm_disarm(self, code: str | None = None) -> None:
         """Disarm the alarm (외출해제)."""
         await self.coordinator.api.set_guard_mode(GUARD_MODE_OFF, password=code)
-        await self.coordinator.async_request_refresh()
+        # Notify HA of immediate state change
+        self.async_write_ha_state()
 
     async def async_alarm_arm_away(self, code: str | None = None) -> None:
         """Arm the alarm in away mode (외출모드)."""
         await self.coordinator.api.set_guard_mode(GUARD_MODE_AWAY, password=code)
-        await self.coordinator.async_request_refresh()
+        # Notify HA of immediate state change
+        self.async_write_ha_state()

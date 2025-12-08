@@ -119,12 +119,14 @@ class DaelimLight(DaelimEntity, LightEntity):
         else:
             await self.coordinator.api.set_light(self._uid, STATE_ON)
         
-        await self.coordinator.async_request_refresh()
+        # Notify HA of immediate state change (state already updated in API)
+        self.async_write_ha_state()
 
     async def async_turn_off(self, **kwargs: Any) -> None:
         """Turn off the light."""
         await self.coordinator.api.set_light(self._uid, STATE_OFF)
-        await self.coordinator.async_request_refresh()
+        # Notify HA of immediate state change (state already updated in API)
+        self.async_write_ha_state()
 
 
 class DaelimAllLights(LightEntity):
@@ -157,9 +159,9 @@ class DaelimAllLights(LightEntity):
     async def async_turn_on(self, **kwargs: Any) -> None:
         """Turn on all lights."""
         await self.coordinator.api.set_light_all(STATE_ON)
-        await self.coordinator.async_request_refresh()
+        self.async_write_ha_state()
 
     async def async_turn_off(self, **kwargs: Any) -> None:
         """Turn off all lights."""
         await self.coordinator.api.set_light_all(STATE_OFF)
-        await self.coordinator.async_request_refresh()
+        self.async_write_ha_state()
