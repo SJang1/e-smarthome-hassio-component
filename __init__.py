@@ -21,6 +21,7 @@ from .const import (
     CONF_HO,
     CONF_CONTROL_INFO,
     CONF_DEVICE_UUID,
+    CONF_CERT_PIN,
     CONF_LOGIN_PIN,
     DEFAULT_INTERNAL_PORT,
 )
@@ -86,6 +87,13 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     protocol_connected = False
     stored_control_info = entry.data.get(CONF_CONTROL_INFO)
     
+    # Restore saved pins for session resumption
+    stored_cert_pin = entry.data.get(CONF_CERT_PIN)
+    stored_login_pin = entry.data.get(CONF_LOGIN_PIN)
+    if stored_cert_pin or stored_login_pin:
+        _LOGGER.info("Restoring saved pins for session resumption")
+        api.set_saved_pins(stored_cert_pin, stored_login_pin)
+    
     if api.internal_ip:
         try:
             if await api.connect_protocol():
@@ -95,14 +103,29 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
                 )
                 protocol_connected = True
                 
-                # Save device config for future use if we got new data
+                # Save device config and pins for future use
                 new_control_info = api.get_control_info_for_storage()
+                new_cert_pin = api.saved_cert_pin
+                new_login_pin = api.saved_login_pin
+                
+                # Check if we need to update stored data
+                needs_update = False
+                new_data = {**entry.data}
+                
                 if new_control_info and new_control_info != stored_control_info:
                     _LOGGER.info("Updating stored device configuration")
-                    hass.config_entries.async_update_entry(
-                        entry,
-                        data={**entry.data, CONF_CONTROL_INFO: new_control_info}
-                    )
+                    new_data[CONF_CONTROL_INFO] = new_control_info
+                    needs_update = True
+                
+                if new_cert_pin != stored_cert_pin or new_login_pin != stored_login_pin:
+                    _LOGGER.info("Updating stored pins (cert=%s, login=%s)", 
+                                new_cert_pin, new_login_pin)
+                    new_data[CONF_CERT_PIN] = new_cert_pin
+                    new_data[CONF_LOGIN_PIN] = new_login_pin
+                    needs_update = True
+                
+                if needs_update:
+                    hass.config_entries.async_update_entry(entry, data=new_data)
             else:
                 _LOGGER.warning(
                     "Could not connect to apartment server at %s:%s. "

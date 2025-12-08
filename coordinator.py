@@ -45,15 +45,23 @@ class DaelimDataUpdateCoordinator(DataUpdateCoordinator):
             
             try:
                 energy_data = await self.api.query_energy_monthly()
+                if energy_data:
+                    _LOGGER.info("Energy monthly data received: items=%s", list(energy_data.keys()) if isinstance(energy_data, dict) else type(energy_data))
+                else:
+                    _LOGGER.warning("Energy monthly query returned None")
             except Exception as ex:
                 _LOGGER.warning("Failed to fetch monthly energy data: %s", ex)
             
             try:
                 energy_yearly = await self.api.query_all_energy_yearly()
+                if energy_yearly:
+                    _LOGGER.info("Energy yearly data received for types: %s", list(energy_yearly.keys()) if isinstance(energy_yearly, dict) else type(energy_yearly))
+                else:
+                    _LOGGER.warning("Energy yearly query returned None")
             except Exception as ex:
                 _LOGGER.warning("Failed to fetch yearly energy data: %s", ex)
             
-            return {
+            result = {
                 "devices": self.api.device_states,
                 "guard_mode": self.api.guard_mode,
                 "lights": self.api.lights,
@@ -64,5 +72,7 @@ class DaelimDataUpdateCoordinator(DataUpdateCoordinator):
                 "energy": energy_data,
                 "energy_yearly": energy_yearly,
             }
+            _LOGGER.debug("Coordinator data keys: %s", list(result.keys()))
+            return result
         except Exception as err:
             raise UpdateFailed(f"Error communicating with API: {err}") from err

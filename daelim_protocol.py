@@ -203,7 +203,8 @@ class DaelimProtocolClient:
         self._user_id: str = ""
         self._password: str = ""
         
-        # Saved login pin for reuse
+        # Saved pins for reuse (can persist across sessions)
+        self._saved_cert_pin: str | None = None
         self._saved_login_pin: str | None = None
         
     @property
@@ -222,22 +223,41 @@ class DaelimProtocolClient:
         return self._control_info
     
     @property
-    def login_pin(self) -> str:
+    def loginpin(self) -> str | None:
         """Return current login pin."""
         return self._login_pin
+    
+    @property
+    def certpin(self) -> str | None:
+        """Return current cert pin."""
+        return self._cert_pin
+    
+    @property
+    def saved_login_pin(self) -> str | None:
+        """Return saved login pin for persistence."""
+        return self._saved_login_pin
+    
+    @property
+    def saved_cert_pin(self) -> str | None:
+        """Return saved cert pin for persistence."""
+        return self._saved_cert_pin
     
     def set_uuid(self, uuid: str) -> None:
         """Set device UUID for authentication."""
         self._uuid = uuid
     
-    def set_saved_login_pin(self, login_pin: str) -> None:
-        """Set a saved login pin for reuse.
+    def set_saved_pins(self, cert_pin: str | None, login_pin: str | None) -> None:
+        """Set saved pins for reuse.
         
-        Call this before login() to try reusing an existing pin.
-        If the pin is expired, a fresh login will be performed.
+        Call this before login() to try reusing existing pins.
+        The login flow will:
+        1. Try saved LoginPin first (Menu request)
+        2. If that fails, try to get new LoginPin with saved CertPin
+        3. If that also fails, do fresh login with credentials
         """
+        self._saved_cert_pin = cert_pin
         self._saved_login_pin = login_pin
-        _LOGGER.debug("Saved login pin set: %s", login_pin)
+        _LOGGER.debug("Saved pins set: cert=%s, login=%s", cert_pin, login_pin)
     
     async def connect(self) -> bool:
         """Connect to the smart home server."""
@@ -265,19 +285,23 @@ class DaelimProtocolClient:
     
     async def disconnect(self) -> None:
         """Disconnect from the server."""
+        # Set state flags immediately
         self._connected = False
         self._logged_in = False
         
-        if self._writer:
+        # Then cleanup resources
+        writer = self._writer
+        self._writer = None
+        self._reader = None
+        
+        if writer:
             try:
-                self._writer.close()
-                await self._writer.wait_closed()
+                writer.close()
+                await writer.wait_closed()
             except Exception:
                 pass
-            self._writer = None
         
-        self._reader = None
-        _LOGGER.info("Disconnected from Daelim server")
+        _LOGGER.debug("Disconnected from Daelim server")
     
     def _build_message(
         self,
@@ -301,8 +325,9 @@ class DaelimProtocolClient:
         # Length = 8 (pin) + 4 (type) + 4 (subtype) + 4 (direction) + 4 (reserved) + json
         length = 8 + 4 + 4 + 4 + 4 + len(json_bytes)
         
-        # Pad login_pin to exactly 8 chars
-        pin = self._login_pin.ljust(8)[:8]
+        # Pad login_pin to exactly 8 chars (default to 00000000 if not set)
+        pin_str = self._login_pin or "00000000"
+        pin = pin_str.ljust(8)[:8]
         
         message = struct.pack('>I', length)              # [0-3]
         message += pin.encode('ascii')                   # [4-11]
@@ -383,8 +408,8 @@ class DaelimProtocolClient:
                 )
                 
                 if not response_data:
-                    self._connected = False
-                    self._logged_in = False
+                    _LOGGER.warning("Empty response received, connection lost")
+                    await self.disconnect()
                     return {"error": -1, "body": {}}
                 
                 result = self._parse_response(response_data)
@@ -400,13 +425,11 @@ class DaelimProtocolClient:
                 
             except asyncio.TimeoutError:
                 _LOGGER.error("Request timeout")
-                self._connected = False
-                self._logged_in = False
+                await self.disconnect()
                 return {"error": -1, "body": {}}
             except Exception as ex:
                 _LOGGER.error("Send/receive error: %s", ex)
-                self._connected = False
-                self._logged_in = False
+                await self.disconnect()
                 return {"error": -1, "body": {}}
     
     async def _send_with_auto_relogin(
@@ -457,13 +480,15 @@ class DaelimProtocolClient:
     # =========================================================================
     
     async def login(self, user_id: str, password: str, uuid: str = "") -> dict:
-        """Full login flow with saved pin reuse.
+        """Login with cascading fallback for saved pins.
         
-        If a saved login pin is set, tries to use it first by requesting menu.
-        If that fails (expired session), performs full login flow:
-        1. Get CertPin (pin=00000000, subtype=5)
-        2. Get LoginPin (pin=certpin, subtype=9)
-        3. Get Menu (pin=loginpin, subtype=7)
+        Authentication flow with fallbacks:
+        1. If saved LoginPin exists: Try Menu request with it
+        2. If that fails and saved CertPin exists: Reconnect, try to get new LoginPin
+        3. If that also fails: Reconnect, do full fresh login (CertPin -> LoginPin -> Menu)
+        
+        Note: The server drops the connection on authentication failure,
+        so we must reconnect between attempts.
         
         Returns response dict with error code and control_info.
         """
@@ -476,9 +501,116 @@ class DaelimProtocolClient:
             if not await self.connect():
                 return {"error": -1, "body": {}}
         
-        # Always do fresh login - saved pin reuse was causing issues
-        # The server expects a fresh CertPin -> LoginPin -> Menu flow each time
+        # === STEP 1: Try saved LoginPin first ===
+        if self._saved_login_pin:
+            _LOGGER.info("Trying saved LoginPin: %s", self._saved_login_pin)
+            self._login_pin = self._saved_login_pin
+            
+            response = await self._send_and_receive(
+                TYPE_LOGIN, SUBTYPE_MENU_REQ, {}
+            )
+            
+            error = response.get("error", -1)
+            if error == ERROR_SUCCESS:
+                _LOGGER.info("Saved LoginPin still valid!")
+                body = response.get("body", {})
+                if "controlinfo" in body:
+                    self._control_info = body["controlinfo"]
+                else:
+                    self._control_info = body
+                
+                # Update saved pins (they're still valid)
+                self._saved_login_pin = self._login_pin
+                self._logged_in = True
+                return {"error": ERROR_SUCCESS, "body": self._control_info}
+            else:
+                _LOGGER.info("Saved LoginPin expired (error %d), will try CertPin...", error)
+                # Connection likely dropped, need to reconnect for next attempt
+                await self.disconnect()
+        
+        # === STEP 2: Try saved CertPin to get new LoginPin ===
+        if self._saved_cert_pin:
+            _LOGGER.info("Reconnecting to try saved CertPin: %s", self._saved_cert_pin)
+            if not await self.connect():
+                _LOGGER.warning("Failed to reconnect for CertPin attempt")
+            else:
+                result = await self._login_with_certpin(user_id, password, self._saved_cert_pin, uuid)
+                
+                if result.get("error", -1) == ERROR_SUCCESS:
+                    _LOGGER.info("Got new LoginPin using saved CertPin!")
+                    return result
+                else:
+                    _LOGGER.info("Saved CertPin also expired, will do fresh login...")
+                    # Connection likely dropped again
+                    await self.disconnect()
+        
+        # === STEP 3: Full fresh login ===
+        _LOGGER.info("Reconnecting for fresh login...")
+        if not await self.connect():
+            _LOGGER.error("Failed to reconnect for fresh login")
+            return {"error": -1, "body": {}}
+        
         return await self._do_fresh_login(user_id, password, uuid)
+    
+    async def _login_with_certpin(
+        self, user_id: str, password: str, cert_pin: str, uuid: str = ""
+    ) -> dict:
+        """Get new LoginPin using an existing CertPin, then get Menu.
+        
+        This is step 2 of the login flow - useful when LoginPin expired
+        but CertPin is still valid.
+        """
+        try:
+            # Use CertPin to request LoginPin
+            self._login_pin = cert_pin
+            self._cert_pin = cert_pin
+            payload = {"id": user_id, "pw": password, "certpin": cert_pin}
+            
+            response = await self._send_and_receive(
+                TYPE_LOGIN, SUBTYPE_LOGINPIN_REQ, payload
+            )
+            
+            if response.get("error", 0) != ERROR_SUCCESS:
+                _LOGGER.warning("LoginPin request with saved CertPin failed: %s", response)
+                return response
+            
+            body = response.get("body", {})
+            if "loginpin" not in body:
+                _LOGGER.error("No loginpin in response")
+                return {"error": -1, "body": {}}
+            
+            self._login_pin = body["loginpin"]
+            _LOGGER.info("Got new LoginPin: %s", self._login_pin)
+            
+            # Now get Menu
+            response = await self._send_and_receive(
+                TYPE_LOGIN, SUBTYPE_MENU_REQ, {}
+            )
+            
+            if response.get("error", 0) != ERROR_SUCCESS:
+                error = response.get("error", 0)
+                if error != 0:
+                    _LOGGER.warning("Menu request returned error: %d", error)
+                    return response
+            
+            # Parse control_info
+            body = response.get("body", {})
+            if "controlinfo" in body:
+                self._control_info = body["controlinfo"]
+            else:
+                self._control_info = body
+            
+            # Update saved pins
+            self._saved_cert_pin = cert_pin
+            self._saved_login_pin = self._login_pin
+            self._logged_in = True
+            
+            return {"error": ERROR_SUCCESS, "body": self._control_info}
+            
+        except Exception as ex:
+            _LOGGER.error("Login with CertPin error: %s", ex)
+            await self.disconnect()
+            return {"error": -1, "body": {}}
     
     async def _do_fresh_login(
         self, user_id: str, password: str, uuid: str = ""
@@ -546,8 +678,13 @@ class DaelimProtocolClient:
                 # The body itself might be the control info
                 self._control_info = body
             
+            # Save both pins for future reuse
+            self._saved_cert_pin = self._cert_pin
+            self._saved_login_pin = self._login_pin
+            
             self._logged_in = True
-            _LOGGER.info("Login successful!")
+            _LOGGER.info("Fresh login successful! Saved CertPin=%s, LoginPin=%s", 
+                        self._cert_pin, self._login_pin)
             
             return {"error": ERROR_SUCCESS, "body": self._control_info}
             

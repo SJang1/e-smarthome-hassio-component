@@ -44,6 +44,9 @@ async def async_setup_entry(
     data = hass.data[DOMAIN][entry.entry_id]
     coordinator: DaelimDataUpdateCoordinator = data["coordinator"]
     
+    _LOGGER.info("Setting up energy sensors. Coordinator data: %s", 
+                 list(coordinator.data.keys()) if coordinator.data else None)
+    
     entities: list[SensorEntity] = []
     
     # Create sensors for each energy type
@@ -127,7 +130,6 @@ class DaelimEnergySensor(CoordinatorEntity[DaelimDataUpdateCoordinator], SensorE
         self._name_en = name_en
         self._sensor_type = sensor_type
         
-        self._attr_device_class = device_class
         self._attr_native_unit_of_measurement = unit
         self._attr_icon = icon
         
@@ -135,12 +137,17 @@ class DaelimEnergySensor(CoordinatorEntity[DaelimDataUpdateCoordinator], SensorE
         if sensor_type == "current":
             self._attr_name = f"{name_ko} 당월 ({name_en} This Month)"
             self._attr_state_class = SensorStateClass.TOTAL_INCREASING
+            self._attr_device_class = device_class
         elif sensor_type == "total":
             self._attr_name = f"{name_ko} 누적 ({name_en} Total)"
             self._attr_state_class = SensorStateClass.TOTAL
+            self._attr_device_class = device_class
         else:  # average
             self._attr_name = f"{name_ko} 평균 ({name_en} Average)"
+            # For average, we can't use device_class with MEASUREMENT state_class
+            # as energy/gas/water device classes require total or total_increasing
             self._attr_state_class = SensorStateClass.MEASUREMENT
+            self._attr_device_class = None  # No device_class for averages
         
         self._attr_unique_id = f"{DOMAIN}_energy_{energy_type.lower()}_{sensor_type}"
         
@@ -156,11 +163,22 @@ class DaelimEnergySensor(CoordinatorEntity[DaelimDataUpdateCoordinator], SensorE
     @property
     def available(self) -> bool:
         """Return if entity is available."""
-        return self.coordinator.last_update_success and self.coordinator.data.get("energy") is not None
+        if not self.coordinator.last_update_success:
+            _LOGGER.debug("Sensor %s unavailable: last_update_success=False", self._attr_unique_id)
+            return False
+        if not self.coordinator.data:
+            _LOGGER.debug("Sensor %s unavailable: coordinator.data is None", self._attr_unique_id)
+            return False
+        energy_available = self.coordinator.data.get("energy") is not None
+        if not energy_available:
+            _LOGGER.debug("Sensor %s unavailable: energy data is None", self._attr_unique_id)
+        return energy_available
 
     @property
     def native_value(self) -> float | None:
         """Return the state of the sensor."""
+        if not self.coordinator.data:
+            return None
         energy_data = self.coordinator.data.get("energy")
         if not energy_data:
             return None
@@ -182,6 +200,8 @@ class DaelimEnergySensor(CoordinatorEntity[DaelimDataUpdateCoordinator], SensorE
     @property
     def extra_state_attributes(self) -> dict[str, Any]:
         """Return additional attributes."""
+        if not self.coordinator.data:
+            return {}
         energy_data = self.coordinator.data.get("energy")
         if not energy_data:
             return {}
@@ -249,8 +269,12 @@ class DaelimEnergyYearlySensor(CoordinatorEntity[DaelimDataUpdateCoordinator], S
     @property
     def available(self) -> bool:
         """Return if entity is available."""
+        if not self.coordinator.last_update_success:
+            return False
+        if not self.coordinator.data:
+            return False
         yearly_data = self.coordinator.data.get("energy_yearly", {})
-        return self.coordinator.last_update_success and yearly_data.get(self._energy_type) is not None
+        return yearly_data.get(self._energy_type) is not None
 
     @property
     def native_value(self) -> float | None:
@@ -265,6 +289,8 @@ class DaelimEnergyYearlySensor(CoordinatorEntity[DaelimDataUpdateCoordinator], S
             "year": "2025"
         }
         """
+        if not self.coordinator.data:
+            return None
         yearly_data = self.coordinator.data.get("energy_yearly", {})
         type_data = yearly_data.get(self._energy_type)
         if not type_data:
@@ -282,6 +308,8 @@ class DaelimEnergyYearlySensor(CoordinatorEntity[DaelimDataUpdateCoordinator], S
     @property
     def extra_state_attributes(self) -> dict[str, Any]:
         """Return additional attributes with yearly data."""
+        if not self.coordinator.data:
+            return {}
         yearly_data = self.coordinator.data.get("energy_yearly", {})
         type_data = yearly_data.get(self._energy_type)
         if not type_data:

@@ -222,6 +222,8 @@ class DaelimSmartHomeAPI:
         self._base_url = f"https://{host}"
         self._jsession_id: str | None = None
         self._session_id: str | None = None
+        
+        # Saved pins for protocol session resumption
         self._cert_pin: str | None = None
         self._login_pin: str | None = None
         
@@ -336,10 +338,11 @@ class DaelimSmartHomeAPI:
                 port=self.DEFAULT_PORT,
             )
             
-            # Try to reuse saved login pin if available
-            if self._login_pin:
-                _LOGGER.info("Setting saved login pin for reuse")
-                self._protocol_client.set_saved_login_pin(self._login_pin)
+            # Set saved pins for session resumption
+            if self._cert_pin or self._login_pin:
+                _LOGGER.info("Setting saved pins for session resumption (cert=%s, login=%s)",
+                            self._cert_pin, self._login_pin)
+                self._protocol_client.set_saved_pins(self._cert_pin, self._login_pin)
             
             # Connect and login with UUID
             login_response = await self._protocol_client.login(
@@ -356,9 +359,11 @@ class DaelimSmartHomeAPI:
                 )
                 return False
             
-            # Save the login pin for future reconnections
-            self._login_pin = self._protocol_client.login_pin
-            _LOGGER.debug("Saved login pin: %s", self._login_pin)
+            # Save both pins for future reconnections
+            self._cert_pin = self._protocol_client.saved_cert_pin
+            self._login_pin = self._protocol_client.saved_login_pin
+            _LOGGER.debug("Saved pins after login: cert=%s, login=%s", 
+                         self._cert_pin, self._login_pin)
             
             # Parse control info from login response
             control_info = self._protocol_client.control_info
@@ -379,12 +384,18 @@ class DaelimSmartHomeAPI:
             return False
     
     @property
+    def saved_cert_pin(self) -> str | None:
+        """Return saved cert pin for persistence."""
+        return self._cert_pin
+    
+    @property
     def saved_login_pin(self) -> str | None:
         """Return saved login pin for persistence."""
         return self._login_pin
     
-    def set_saved_login_pin(self, login_pin: str) -> None:
-        """Set saved login pin from persistent storage."""
+    def set_saved_pins(self, cert_pin: str | None, login_pin: str | None) -> None:
+        """Set saved pins from persistent storage."""
+        self._cert_pin = cert_pin
         self._login_pin = login_pin
 
     async def disconnect_protocol(self) -> None:
@@ -399,10 +410,10 @@ class DaelimSmartHomeAPI:
         Returns:
             True if connected (or reconnected successfully)
         """
-        if self._protocol_client and self._protocol_client.connected:
+        if self._protocol_client and self._protocol_client.connected and self._protocol_client.logged_in:
             return True
         
-        _LOGGER.info("Protocol client disconnected, attempting to reconnect...")
+        _LOGGER.info("Protocol client not connected/logged in, attempting to reconnect...")
         return await self.connect_protocol()
 
     async def get_initial_session(self) -> bool:
@@ -890,7 +901,8 @@ class DaelimSmartHomeAPI:
 
     async def set_light(self, uid: str, state: str, brightness: int | None = None) -> bool:
         """Set light state."""
-        if not self._protocol_client or not self._protocol_client.connected:
+        # Ensure protocol is connected before attempting control
+        if not await self.ensure_protocol_connected():
             _LOGGER.error("Cannot control light: protocol client not connected")
             return False
         
@@ -907,11 +919,19 @@ class DaelimSmartHomeAPI:
                     dim_level = 6
             
             response = await self._protocol_client.set_light(uid, state, dim_level)
-            if response.get("error", 0) == ERROR_SUCCESS:
+            error = response.get("error", -1)
+            
+            # If connection error, try reconnecting and retry once
+            if error == -1:
+                _LOGGER.warning("Light control connection error, reconnecting and retrying...")
+                if await self.ensure_protocol_connected():
+                    response = await self._protocol_client.set_light(uid, state, dim_level)
+                    error = response.get("error", -1)
+            
+            if error == ERROR_SUCCESS:
                 _LOGGER.debug("Light %s set to %s", uid, state)
                 return True
             else:
-                error = response.get("error", -1)
                 _LOGGER.error(
                     "Light control failed: %s",
                     MESSAGE_ERR.get(error, f"Error {error}")
@@ -923,7 +943,7 @@ class DaelimSmartHomeAPI:
 
     async def set_light_all(self, state: str) -> bool:
         """Set all lights state."""
-        if not self._protocol_client or not self._protocol_client.connected:
+        if not await self.ensure_protocol_connected():
             _LOGGER.error("Cannot control lights: protocol client not connected")
             return False
         
@@ -950,7 +970,7 @@ class DaelimSmartHomeAPI:
         temperature: float | None = None
     ) -> bool:
         """Set heating state and temperature."""
-        if not self._protocol_client or not self._protocol_client.connected:
+        if not await self.ensure_protocol_connected():
             _LOGGER.error("Cannot control heating: protocol client not connected")
             return False
         
@@ -973,7 +993,7 @@ class DaelimSmartHomeAPI:
 
     async def set_gas(self, uid: str, state: str) -> bool:
         """Set gas valve state (only 'off' is typically allowed for safety)."""
-        if not self._protocol_client or not self._protocol_client.connected:
+        if not await self.ensure_protocol_connected():
             _LOGGER.error("Cannot control gas: protocol client not connected")
             return False
         
@@ -1001,7 +1021,7 @@ class DaelimSmartHomeAPI:
         mode: str | None = None
     ) -> bool:
         """Set fan/ventilation state."""
-        if not self._protocol_client or not self._protocol_client.connected:
+        if not await self.ensure_protocol_connected():
             _LOGGER.error("Cannot control fan: protocol client not connected")
             return False
         
@@ -1023,7 +1043,7 @@ class DaelimSmartHomeAPI:
 
     async def set_wallsocket(self, uid: str, state: str) -> bool:
         """Set standby power outlet state."""
-        if not self._protocol_client or not self._protocol_client.connected:
+        if not await self.ensure_protocol_connected():
             _LOGGER.error("Cannot control wallsocket: protocol client not connected")
             return False
         
@@ -1045,7 +1065,7 @@ class DaelimSmartHomeAPI:
 
     async def set_all_off(self) -> bool:
         """Turn off all devices (일괄차단)."""
-        if not self._protocol_client or not self._protocol_client.connected:
+        if not await self.ensure_protocol_connected():
             _LOGGER.error("Cannot turn off all: protocol client not connected")
             return False
         
@@ -1067,7 +1087,7 @@ class DaelimSmartHomeAPI:
 
     async def set_guard_mode(self, mode: str, password: str | None = None) -> bool:
         """Set guard/security mode (away mode)."""
-        if not self._protocol_client or not self._protocol_client.connected:
+        if not await self.ensure_protocol_connected():
             _LOGGER.error("Cannot set guard mode: protocol client not connected")
             return False
         
@@ -1090,7 +1110,7 @@ class DaelimSmartHomeAPI:
 
     async def call_elevator(self) -> bool:
         """Call elevator."""
-        if not self._protocol_client or not self._protocol_client.connected:
+        if not await self.ensure_protocol_connected():
             _LOGGER.error("Cannot call elevator: protocol client not connected")
             return False
         
@@ -1124,7 +1144,8 @@ class DaelimSmartHomeAPI:
         Returns:
             Energy data dict with items for each type (Elec, Gas, Water, etc.)
         """
-        if not self._protocol_client or not self._protocol_client.connected:
+        # Ensure protocol is connected before querying
+        if not await self.ensure_protocol_connected():
             _LOGGER.debug("Cannot query energy: protocol client not connected")
             return None
         
@@ -1153,7 +1174,8 @@ class DaelimSmartHomeAPI:
         Returns:
             Energy data dict with monthly breakdown for the year.
         """
-        if not self._protocol_client or not self._protocol_client.connected:
+        # Ensure protocol is connected before querying
+        if not await self.ensure_protocol_connected():
             _LOGGER.debug("Cannot query energy year: protocol client not connected")
             return None
         
