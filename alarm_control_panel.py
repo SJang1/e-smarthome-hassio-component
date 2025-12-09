@@ -75,12 +75,27 @@ class DaelimAlarmPanel(AlarmControlPanelEntity):
 
     async def async_alarm_disarm(self, code: str | None = None) -> None:
         """Disarm the alarm (외출해제)."""
-        await self.coordinator.api.set_guard_mode(GUARD_MODE_OFF, password=code)
-        # Notify HA of immediate state change
+        success = await self.coordinator.api.set_guard_mode(GUARD_MODE_OFF, password=code)
+        if success:
+            # Update coordinator data so other entities/readers see the new mode immediately
+            try:
+                new_data = dict(self.coordinator.data or {})
+                new_data["guard_mode"] = self.coordinator.api.guard_mode
+                await self.coordinator.async_set_updated_data(new_data)
+            except Exception:
+                # Fallback: request a full refresh
+                await self.coordinator.async_request_refresh()
+        # Notify HA of immediate state change (coordinator update will also notify)
         self.async_write_ha_state()
 
     async def async_alarm_arm_away(self, code: str | None = None) -> None:
         """Arm the alarm in away mode (외출모드)."""
-        await self.coordinator.api.set_guard_mode(GUARD_MODE_AWAY, password=code)
-        # Notify HA of immediate state change
+        success = await self.coordinator.api.set_guard_mode(GUARD_MODE_AWAY, password=code)
+        if success:
+            try:
+                new_data = dict(self.coordinator.data or {})
+                new_data["guard_mode"] = self.coordinator.api.guard_mode
+                await self.coordinator.async_set_updated_data(new_data)
+            except Exception:
+                await self.coordinator.async_request_refresh()
         self.async_write_ha_state()

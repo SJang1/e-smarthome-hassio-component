@@ -53,10 +53,16 @@ SUBTYPE_LOGINPIN_REQ = 9
 SUBTYPE_LOGINPIN_RES = 10
 
 # Security Subtypes
-SUBTYPE_SEC_QUERY_REQ = 1
-SUBTYPE_SEC_QUERY_RES = 2
-SUBTYPE_SEC_SET_REQ = 3
-SUBTYPE_SEC_SET_RES = 4
+SUBTYPE_SEC_QUERY_REQ = 8   # SEC_QRY_REQ in daelim_const.js
+SUBTYPE_SEC_QUERY_RES = 9
+
+# Activation (arm/disarm)
+SUBTYPE_SEC_ACT_REQ = 6
+SUBTYPE_SEC_ACT_RES = 7
+
+# Settings (e.g., stime/wtime)
+SUBTYPE_SEC_SET_REQ = 10
+SUBTYPE_SEC_SET_RES = 11
 
 # Device Subtypes
 SUBTYPE_DEVICE_QUERY_REQ = 1
@@ -864,18 +870,38 @@ class DaelimProtocolClient:
     
     async def query_guard_mode(self) -> dict:
         """Query guard/security mode status."""
-        return await self._send_with_auto_relogin(TYPE_GUARD, SUBTYPE_SEC_QUERY_REQ, {})
+        # Guard mode queries can be a bit slower on some servers; use a longer timeout
+        return await self._send_with_auto_relogin(TYPE_GUARD, SUBTYPE_SEC_QUERY_REQ, {}, timeout=10.0)
     
     async def set_guard_mode(
         self,
         mode: str,
         password: str | None = None,
+        timeout: float = 10.0,
     ) -> dict:
         """Set guard/security mode."""
-        payload = {"mode": mode}
-        if password:
-            payload["pwd"] = password
-        return await self._send_with_auto_relogin(TYPE_GUARD, SUBTYPE_SEC_SET_REQ, payload)
+        # Ensure values are strings to match observed device packets
+        payload = {"mode": str(mode)}
+        if password is not None:
+            payload["pwd"] = str(password)
+
+        # Use activation subtype for arm/disarm (SEC_ACT_REQ)
+        result = await self._send_with_auto_relogin(
+            TYPE_GUARD, SUBTYPE_SEC_ACT_REQ, payload, timeout=timeout
+        )
+
+        # Retry once on connection/timeout error (-1)
+        if result.get("error", 0) == -1:
+            _LOGGER.warning("Guard set timed out/failed, retrying once...")
+            try:
+                await asyncio.sleep(0.5)
+            except Exception:
+                pass
+            result = await self._send_with_auto_relogin(
+                TYPE_GUARD, SUBTYPE_SEC_ACT_REQ, payload, timeout=timeout
+            )
+
+        return result
     
     # =========================================================================
     # Elevator

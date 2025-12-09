@@ -935,7 +935,13 @@ class DaelimSmartHomeAPI:
             response = await self._protocol_client.query_guard_mode()
             if response.get("error", 0) == ERROR_SUCCESS:
                 body = response.get("body", {})
+                # Response may contain numeric or string mode (e.g. 1 or "1").
+                # Normalize to string for consistent comparisons elsewhere.
                 mode = body.get("mode", GUARD_MODE_OFF)
+                try:
+                    mode = str(mode)
+                except Exception:
+                    mode = GUARD_MODE_OFF
                 self._guard_mode = mode
                 _LOGGER.debug("Guard mode: %s", mode)
             else:
@@ -1172,8 +1178,15 @@ class DaelimSmartHomeAPI:
         try:
             response = await self._protocol_client.set_guard_mode(mode, password)
             if response.get("error", 0) == ERROR_SUCCESS:
-                self._guard_mode = mode
-                _LOGGER.debug("Guard mode set to %s", mode)
+                # Server response may include the resulting mode as numeric.
+                body = response.get("body", {})
+                resp_mode = body.get("mode", mode)
+                try:
+                    resp_mode = str(resp_mode)
+                except Exception:
+                    resp_mode = str(mode)
+                self._guard_mode = resp_mode
+                _LOGGER.debug("Guard mode set to %s (requested=%s)", resp_mode, mode)
                 return True
             else:
                 error = response.get("error", -1)
