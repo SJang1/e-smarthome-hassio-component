@@ -461,7 +461,7 @@ class DaelimProtocolClient:
                 return result
                 
             except asyncio.TimeoutError:
-                _LOGGER.error("Request timeout")
+                _LOGGER.warning("Request timeout")
                 await self.disconnect()
                 return {"error": -1, "body": {}}
             except asyncio.IncompleteReadError as ex:
