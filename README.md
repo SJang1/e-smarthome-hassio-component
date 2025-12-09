@@ -10,12 +10,12 @@ This integration supports the following devices from the Daelim Smart Home syste
 |-------------|----------|----------|
 | **조명 (Lights)** | `light` | On/Off, Dimming (3-level for supported lights) |
 | **난방 (Heating)** | `climate` | On/Off, Temperature control |
-| **가스 밸브 (Gas Valve)** | `switch` | On/Off (safety lock) |
+| **가스 밸브 (Gas Valve)** | `valve` | On/Off (safety lock) |
 | **환기 (Ventilation/Fan)** | `fan` | On/Off, Speed control (3 levels), Auto mode |
 | **대기전력 콘센트 (Standby Power Outlet)** | `switch` | On/Off |
 | **방범모드 (Security/Guard Mode)** | `alarm_control_panel` | Away mode On/Off |
 | **엘리베이터 호출 (Elevator Call)** | `button` | Press to call |
-| **일괄차단 (All Off)** | `switch` | Turn off all devices |
+| **일괄차단 (All Off)** | `button` | Execute master "all off" command |
 
 ## Installation
 
@@ -45,7 +45,7 @@ This integration supports the following devices from the Daelim Smart Home syste
 5. **Step 3 - Enter Credentials**:
    - **Username**: Your e편한세상 app login ID
    - **Password**: Your e편한세상 app password
-   - **Unit (호)**: Your unit number (e.g., `1204`)
+   - **Unit (호)**: Your unit number (e.g., `1101`)
 
 That's it! The integration automatically discovers:
 - Your apartment's server IP address
@@ -56,9 +56,9 @@ That's it! The integration automatically discovers:
 
 If the apartment list cannot be fetched, you can enter values manually:
 - **Host**: Usually `smarthome.daelim.co.kr`
-- **Apartment ID**: e.g., `224` for e편한세상 대전법동
-- **Building (동)**: e.g., `104`
-- **Unit (호)**: e.g., `1204`
+- **Apartment ID**: e.g., `224`
+- **Building (동)**: e.g., `102`
+- **Unit (호)**: e.g., `1101`
 
 ### Finding Your Configuration Values (Manual Mode)
 
@@ -84,14 +84,14 @@ From the apartment list, here's an example for "e편한세상 대전법동":
     apartId: "224",
     name: "e편한세상 대전법동",
     danjiDirectoryName: "beopdong",
-    ip: "210.219.229.70",
+    ip: "[redacted]",
     danjiDongInfo: "101,102,103,104,105,106,107,108,109,110,111,112"
 }
 ```
 
 This shows:
 - Apartment ID is `224`
-- Server IP is `210.219.229.70` (publicly accessible!)
+- Server IP is `[redacted]` (publicly accessible!)
 - Available buildings are 101-112동
 
 ## Supported Devices
@@ -128,7 +128,7 @@ This shows:
 - Button to call elevator to your floor
 
 ### All Off (일괄차단)
-- Master switch to turn off all devices at once
+- Button entity that executes the master "all off" command (일괄차단)
 
 ## Example Automations
 
@@ -141,9 +141,9 @@ automation:
         entity_id: person.your_name
         from: "home"
     action:
-      - service: switch.turn_on
+      - service: button.press
         target:
-          entity_id: switch.daelim_all_off
+          entity_id: button.daelim_all_off
 ```
 
 ### Call elevator when you're almost home
@@ -202,7 +202,7 @@ The Daelim e편한세상 system uses a **hybrid architecture**:
 
 2. **TCP Protocol** (Apartment Server - PUBLIC IP):
    - All device control uses a JSON-over-TCP protocol on port 25301
-   - The server IP (e.g., `210.219.229.70`) is **publicly accessible**
+   - The server IP (e.g., `[redacted]`) is **publicly accessible**
    - **NO VPN or apartment network access required!**
 
 ### Auto-Discovery
@@ -218,7 +218,7 @@ Example response:
   "item": [{
     "danjiName": "e편한세상 대전법동",
     "danjiDirectoryName": "beopdong",
-    "ipAddress": "210.219.229.70"
+    "ipAddress": "[redacted]"
   }]
 }
 ```
