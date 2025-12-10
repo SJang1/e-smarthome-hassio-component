@@ -131,22 +131,20 @@ class DaelimFan(DaelimEntity, FanEntity):
         preset_mode: str | None = None,
         **kwargs: Any,
     ) -> None:
-        """Turn on the fan."""
+        """Turn on the fan with queuing."""
         speed_code = None
         mode_code = None
-        
         if percentage is not None:
             speed_code = percentage_to_ordered_list_item(SPEED_LEVELS, percentage)
-        
         if preset_mode is not None:
             for code, name in PRESET_MODES.items():
                 if name == preset_mode:
                     mode_code = code
                     break
-        
-        await self.coordinator.api.set_fan(
-            self._uid, 
-            STATE_ON, 
+        await self.coordinator.run_command(
+            self.coordinator.api.set_fan,
+            self._uid,
+            STATE_ON,
             speed=speed_code,
             mode=mode_code,
         )
@@ -154,8 +152,8 @@ class DaelimFan(DaelimEntity, FanEntity):
         self.async_write_ha_state()
 
     async def async_turn_off(self, **kwargs: Any) -> None:
-        """Turn off the fan."""
-        await self.coordinator.api.set_fan(self._uid, STATE_OFF)
+        """Turn off the fan with queuing."""
+        await self.coordinator.run_command(self.coordinator.api.set_fan, self._uid, STATE_OFF)
         # Notify HA of immediate state change
         self.async_write_ha_state()
 

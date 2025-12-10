@@ -90,8 +90,8 @@ class DaelimAllOffButton(ButtonEntity):
         )
 
     async def async_press(self) -> None:
-        """Handle button press - execute all-off command."""
-        success = await self.coordinator.api.set_all_off()
+        """Handle button press - execute all-off command with queuing."""
+        success = await self.coordinator.run_command(self.coordinator.api.set_all_off)
         if success:
             _LOGGER.info("All-off command executed successfully")
         else:

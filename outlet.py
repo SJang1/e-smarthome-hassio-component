@@ -58,13 +58,13 @@ class DaelimOutletSwitch(DaelimEntity, SwitchEntity):
         return False
 
     async def async_turn_on(self, **kwargs: Any) -> None:
-        """Turn on the outlet."""
-        await self.coordinator.api.set_wallsocket(self._uid, STATE_ON)
+        """Turn on the outlet with queuing."""
+        await self.coordinator.run_command(self.coordinator.api.set_wallsocket, self._uid, STATE_ON)
         # Notify HA of immediate state change
         self.async_write_ha_state()
 
     async def async_turn_off(self, **kwargs: Any) -> None:
-        """Turn off the outlet (cut standby power)."""
-        await self.coordinator.api.set_wallsocket(self._uid, STATE_OFF)
+        """Turn off the outlet (cut standby power) with queuing."""
+        await self.coordinator.run_command(self.coordinator.api.set_wallsocket, self._uid, STATE_OFF)
         # Notify HA of immediate state change
         self.async_write_ha_state()

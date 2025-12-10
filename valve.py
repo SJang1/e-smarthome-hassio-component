@@ -83,16 +83,16 @@ class DaelimGasValve(DaelimEntity, ValveEntity):
         return True  # Default to closed for safety
 
     async def async_open_valve(self, **kwargs: Any) -> None:
-        """Open gas valve."""
+        """Open gas valve with queuing."""
         _LOGGER.warning(
             "Opening gas valve remotely - please verify this is allowed by your system"
         )
-        await self.coordinator.api.set_gas(self._uid, STATE_ON)
+        await self.coordinator.run_command(self.coordinator.api.set_gas, self._uid, STATE_ON)
         # Notify HA of immediate state change
         self.async_write_ha_state()
 
     async def async_close_valve(self, **kwargs: Any) -> None:
-        """Close gas valve (safety lock)."""
-        await self.coordinator.api.set_gas(self._uid, STATE_OFF)
+        """Close gas valve (safety lock) with queuing."""
+        await self.coordinator.run_command(self.coordinator.api.set_gas, self._uid, STATE_OFF)
         # Notify HA of immediate state change
         self.async_write_ha_state()

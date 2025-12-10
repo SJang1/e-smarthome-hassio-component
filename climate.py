@@ -123,26 +123,20 @@ class DaelimClimate(DaelimEntity, ClimateEntity):
         return 20
 
     async def async_set_hvac_mode(self, hvac_mode: HVACMode) -> None:
-        """Set HVAC mode."""
+        """Set HVAC mode with queuing."""
         if hvac_mode == HVACMode.HEAT:
-            await self.coordinator.api.set_heating(self._uid, STATE_ON)
+            await self.coordinator.run_command(self.coordinator.api.set_heating, self._uid, STATE_ON)
         else:
-            await self.coordinator.api.set_heating(self._uid, STATE_OFF)
-        
+            await self.coordinator.run_command(self.coordinator.api.set_heating, self._uid, STATE_OFF)
         # Notify HA of immediate state change
         self.async_write_ha_state()
 
     async def async_set_temperature(self, **kwargs: Any) -> None:
-        """Set target temperature."""
+        """Set target temperature with queuing."""
         temperature = kwargs.get(ATTR_TEMPERATURE)
         if temperature is None:
             return
-        
         # Ensure heating is on when setting temperature
-        await self.coordinator.api.set_heating(
-            self._uid, 
-            STATE_ON, 
-            temperature
-        )
+        await self.coordinator.run_command(self.coordinator.api.set_heating, self._uid, STATE_ON, temperature)
         # Notify HA of immediate state change
         self.async_write_ha_state()
