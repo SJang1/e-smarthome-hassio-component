@@ -66,7 +66,7 @@ class DaelimClimate(DaelimEntity, ClimateEntity):
     ) -> None:
         """Initialize the climate entity."""
         super().__init__(coordinator, DEVICE_HEATING, device_info)
-        self._attr_name = self._uname
+        self._attr_name = f"난방 {self._uname}"
 
     @property
     def hvac_mode(self) -> HVACMode:
