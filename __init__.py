@@ -30,6 +30,7 @@ from .const import (
 from .api import DaelimSmartHomeAPI
 from .coordinator import DaelimDataUpdateCoordinator
 from .device_registry import get_known_device_config
+from . import custom_entry
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -204,6 +205,9 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     )
 
     await hass.config_entries.async_forward_entry_setups(entry, PLATFORMS)
+
+    # Set up custom entry helpers (services, entities, etc.) after platforms are ready
+    await custom_entry.async_setup_entry(hass, entry)
 
     # Register listener for options updates (to reload when settings change)
     entry.async_on_unload(entry.add_update_listener(async_options_update_listener))
